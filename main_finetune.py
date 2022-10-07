@@ -10,8 +10,10 @@
 # --------------------------------------------------------
 
 import argparse
+from cProfile import label
 import datetime
 import json
+from typing import Tuple
 import numpy as np
 import os
 import time
@@ -20,10 +22,11 @@ from pathlib import Path
 import torch
 import torch.backends.cudnn as cudnn
 from torch.utils.tensorboard import SummaryWriter
+import wandb
 
 import timm
 
-assert timm.__version__ == "0.3.2" # version check
+# assert timm.__version__ == "0.3.2" # version check
 from timm.models.layers import trunc_normal_
 from timm.data.mixup import Mixup
 from timm.loss import LabelSmoothingCrossEntropy, SoftTargetCrossEntropy
@@ -38,6 +41,9 @@ import models_vit
 
 from engine_finetune import train_one_epoch, evaluate
 
+from util.dataset import EEGDatasetFast
+from torch.utils.data import Subset, ConcatDataset
+
 
 def get_args_parser():
     parser = argparse.ArgumentParser('MAE fine-tuning for image classification', add_help=False)
@@ -48,11 +54,24 @@ def get_args_parser():
                         help='Accumulate gradient iterations (for increasing the effective batch size under memory constraints)')
 
     # Model parameters
-    parser.add_argument('--model', default='vit_large_patch16', type=str, metavar='MODEL',
+    parser.add_argument('--model', default='vit_base_patch200', type=str, metavar='MODEL',
                         help='Name of model to train')
-
-    parser.add_argument('--input_size', default=224, type=int,
+    
+    parser.add_argument('--input_channels', type=int, default=5, metavar='N',
+                        help='input channels')
+    parser.add_argument('--input_electrodes', type=int, default=65, metavar='N',
+                        help='input electrodes')
+    parser.add_argument('--time_steps', type=int, default=37000, metavar='N',
+                        help='input length')
+    parser.add_argument('--input_size', default=(5, 65, 37000), type=Tuple,
                         help='images input size')
+
+    parser.add_argument('--patch_height', type=int, default=65, metavar='N',
+                        help='patch height')
+    parser.add_argument('--patch_width', type=int, default=200, metavar='N',
+                        help='patch width')
+    parser.add_argument('--patch_size', default=(65, 200), type=Tuple,
+                        help='patch size')
 
     parser.add_argument('--drop_path', type=float, default=0.1, metavar='PCT',
                         help='Drop path rate (default: 0.1)')
@@ -112,20 +131,23 @@ def get_args_parser():
     parser.add_argument('--finetune', default='',
                         help='finetune from checkpoint')
     parser.add_argument('--global_pool', action='store_true')
-    parser.set_defaults(global_pool=True)
+    parser.set_defaults(global_pool=False)
     parser.add_argument('--cls_token', action='store_false', dest='global_pool',
                         help='Use class token instead of global pool for classification')
 
     # Dataset parameters
-    parser.add_argument('--data_path', default='/datasets01/imagenet_full_size/061417/', type=str,
+    parser.add_argument('--data_path', default='data_8fold_decomposed_2d_all.pt', type=str,
                         help='dataset path')
-    parser.add_argument('--nb_classes', default=1000, type=int,
+    parser.add_argument('--labels_path', default='labels_2classes_8fold_decomposed_2d_fs200.pt', type=str,
+                        help='labels path')
+    parser.add_argument('--nb_classes', default=2, type=int,
                         help='number of the classification types')
 
-    parser.add_argument('--output_dir', default='./output_dir',
+    parser.add_argument('--output_dir', default='',
                         help='path where to save, empty for no saving')
-    parser.add_argument('--log_dir', default='./output_dir',
+    parser.add_argument('--log_dir', default='./logs',
                         help='path where to tensorboard log')
+    parser.add_argument('--wandb', action='store_true', default=False)
     parser.add_argument('--device', default='cuda',
                         help='device to use for training / testing')
     parser.add_argument('--seed', default=0, type=int)
@@ -156,6 +178,9 @@ def get_args_parser():
 
 
 def main(args):
+    args.input_size = (args.input_channels, args.input_electrodes, args.time_steps)
+    args.patch_size = (args.patch_height, args.patch_width)
+
     misc.init_distributed_mode(args)
 
     print('job dir: {}'.format(os.path.dirname(os.path.realpath(__file__))))
@@ -170,8 +195,23 @@ def main(args):
 
     cudnn.benchmark = True
 
-    dataset_train = build_dataset(is_train=True, args=args)
-    dataset_val = build_dataset(is_train=False, args=args)
+    dataset = EEGDatasetFast(augment=True, args=args)
+    dataset_validate = EEGDatasetFast(transform=True, augment=False, args=args)
+
+    # dataloader
+    # dataset_train = Subset(dataset, list(range(0, 138)))
+    # if args.eval == False:
+    #     dataset_val = Subset(dataset_validate, list(range(138, 184)))
+    # else:
+    #     dataset_val = Subset(dataset_validate, list(range(184, 230)))
+
+    ### THIS IS ONLY FOR SEED
+    dataset_train = Subset(dataset, list(range(112, 559)))
+    # dataset_train = ConcatDataset([Subset(dataset, list(range(0, 12))), Subset(dataset, list(range(12, 15)))])
+    if args.eval == False:
+        dataset_val = Subset(dataset_validate, list(range(0, 112)))
+    else:
+        dataset_val = Subset(dataset_validate, list(range(112, 559)))
 
     if True:  # args.distributed:
         num_tasks = misc.get_world_size()
@@ -196,19 +236,27 @@ def main(args):
     if global_rank == 0 and args.log_dir is not None and not args.eval:
         os.makedirs(args.log_dir, exist_ok=True)
         log_writer = SummaryWriter(log_dir=args.log_dir)
+
+        if args.wandb == True:
+            config = vars(args)
+            wandb.init(project="MAE_He", config=config, entity="oturgut")
     else:
         log_writer = None
 
     data_loader_train = torch.utils.data.DataLoader(
-        dataset_train, sampler=sampler_train,
+        dataset_train, 
+        sampler=sampler_train,
+        # shuffle=True,
         batch_size=args.batch_size,
         num_workers=args.num_workers,
         pin_memory=args.pin_mem,
-        drop_last=True,
+        drop_last=False,
     )
 
     data_loader_val = torch.utils.data.DataLoader(
-        dataset_val, sampler=sampler_val,
+        dataset_val, 
+        sampler=sampler_val,
+        # shuffle=False,
         batch_size=args.batch_size,
         num_workers=args.num_workers,
         pin_memory=args.pin_mem,
@@ -225,6 +273,8 @@ def main(args):
             label_smoothing=args.smoothing, num_classes=args.nb_classes)
     
     model = models_vit.__dict__[args.model](
+        img_size=args.input_size,
+        patch_size=args.patch_size,
         num_classes=args.nb_classes,
         drop_path_rate=args.drop_path,
         global_pool=args.global_pool,
@@ -254,7 +304,7 @@ def main(args):
             assert set(msg.missing_keys) == {'head.weight', 'head.bias'}
 
         # manually initialize fc layer
-        trunc_normal_(model.head.weight, std=2e-5)
+        trunc_normal_(model.head.weight, std=0.01)#2e-5)
 
     model.to(device)
 
@@ -287,13 +337,17 @@ def main(args):
     optimizer = torch.optim.AdamW(param_groups, lr=args.lr)
     loss_scaler = NativeScaler()
 
+    # class_weights = 230.0 / (2.0 * torch.Tensor([88.0, 142.0])) # total_nb_samples / (nb_classes * samples_per_class)
+    ################# THIS IS ONLY FOR SEED #################
+    class_weights = 900.0 / (3.0 * torch.Tensor([293.0, 311.0, 296.0])) # total_nb_samples / (nb_classes * samples_per_class) 
+    class_weights = class_weights.to(device=device)
     if mixup_fn is not None:
         # smoothing is handled with mixup label transform
         criterion = SoftTargetCrossEntropy()
     elif args.smoothing > 0.:
-        criterion = LabelSmoothingCrossEntropy(smoothing=args.smoothing)
+        criterion = torch.nn.CrossEntropyLoss(weight=class_weights, label_smoothing=args.smoothing) #LabelSmoothingCrossEntropy(smoothing=args.smoothing)
     else:
-        criterion = torch.nn.CrossEntropyLoss()
+        criterion = torch.nn.CrossEntropyLoss(weight=class_weights)
 
     print("criterion = %s" % str(criterion))
 
@@ -301,12 +355,12 @@ def main(args):
 
     if args.eval:
         test_stats = evaluate(data_loader_val, model, device)
-        print(f"Accuracy of the network on the {len(dataset_val)} test images: {test_stats['acc1']:.1f}%")
+        print(f"Accuracy / F1 of the network on the {len(dataset_val)} test images: {test_stats['acc1']:.1f}% / {test_stats['f1']:.1f}%")
         exit(0)
 
     print(f"Start training for {args.epochs} epochs")
     start_time = time.time()
-    max_accuracy = 0.0
+    max_accuracy, max_f1 = 0.0, 0.0
     for epoch in range(args.start_epoch, args.epochs):
         if args.distributed:
             data_loader_train.sampler.set_epoch(epoch)
@@ -323,14 +377,24 @@ def main(args):
                 loss_scaler=loss_scaler, epoch=epoch)
 
         test_stats = evaluate(data_loader_val, model, device)
-        print(f"Accuracy of the network on the {len(dataset_val)} test images: {test_stats['acc1']:.1f}%")
+        print(f"Accuracy / F1 of the network on the {len(dataset_val)} test images: {test_stats['acc1']:.1f}% / {test_stats['f1']:.1f}%")
         max_accuracy = max(max_accuracy, test_stats["acc1"])
-        print(f'Max accuracy: {max_accuracy:.2f}%')
+        max_f1 = max(max_f1, test_stats['f1'])
+        print(f'Max accuracy / F1: {max_accuracy:.2f}% / {max_f1:.2f}%')
 
         if log_writer is not None:
             log_writer.add_scalar('perf/test_acc1', test_stats['acc1'], epoch)
             log_writer.add_scalar('perf/test_acc5', test_stats['acc5'], epoch)
+            log_writer.add_scalar('perf/test_f1', test_stats['f1'], epoch)
             log_writer.add_scalar('perf/test_loss', test_stats['loss'], epoch)
+
+            if args.wandb == True:
+                training_history = {'epoch' : epoch,
+                                    'test_acc1' : test_stats['acc1'],
+                                    'test_acc5' : test_stats['acc5'],
+                                    'test_f1' : test_stats['f1'],
+                                    'test_loss' : test_stats['loss']}
+                wandb.log(training_history)
 
         log_stats = {**{f'train_{k}': v for k, v in train_stats.items()},
                         **{f'test_{k}': v for k, v in test_stats.items()},

@@ -14,6 +14,8 @@ from typing import Iterable
 
 import torch
 
+import wandb
+
 import util.misc as misc
 import util.lr_sched as lr_sched
 
@@ -35,6 +37,7 @@ def train_one_epoch(model: torch.nn.Module,
 
     if log_writer is not None:
         print('log_dir: {}'.format(log_writer.log_dir))
+        training_history = {}
 
     for data_iter_step, (samples, _) in enumerate(metric_logger.log_every(data_loader, print_freq, header)):
 
@@ -74,6 +77,12 @@ def train_one_epoch(model: torch.nn.Module,
             epoch_1000x = int((data_iter_step / len(data_loader) + epoch) * 1000)
             log_writer.add_scalar('train_loss', loss_value_reduce, epoch_1000x)
             log_writer.add_scalar('lr', lr, epoch_1000x)
+
+            if args.wandb == True:
+                training_history['epoch_1000x'] = epoch_1000x
+                training_history['train_loss'] = loss_value_reduce
+                training_history['lr'] = lr
+                wandb.log(training_history)
 
 
     # gather the stats from all processes

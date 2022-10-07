@@ -18,16 +18,20 @@ import time
 from pathlib import Path
 
 import torch
+from torch.utils.data import Subset
 import torch.backends.cudnn as cudnn
 from torch.utils.tensorboard import SummaryWriter
+import wandb
+
 import torchvision.transforms as transforms
 import torchvision.datasets as datasets
 
 import timm
 
-assert timm.__version__ == "0.3.2" # version check
+# assert timm.__version__ == "0.3.2" # version check
 from timm.models.layers import trunc_normal_
 
+import util.lr_decay as lrd
 import util.misc as misc
 from util.pos_embed import interpolate_pos_embed
 from util.misc import NativeScalerWithGradNormCount as NativeScaler
@@ -37,6 +41,8 @@ from util.crop import RandomResizedCrop
 import models_vit
 
 from engine_finetune import train_one_epoch, evaluate
+
+from util.dataset import EEGDatasetFast
 
 
 def get_args_parser():
@@ -48,7 +54,7 @@ def get_args_parser():
                         help='Accumulate gradient iterations (for increasing the effective batch size under memory constraints)')
 
     # Model parameters
-    parser.add_argument('--model', default='vit_large_patch16', type=str, metavar='MODEL',
+    parser.add_argument('--model', default='vit_base_patch224', type=str, metavar='MODEL',
                         help='Name of model to train')
 
     # Optimizer parameters
@@ -59,6 +65,8 @@ def get_args_parser():
                         help='learning rate (absolute lr)')
     parser.add_argument('--blr', type=float, default=0.1, metavar='LR',
                         help='base learning rate: absolute_lr = base_lr * total_batch_size / 256')
+    parser.add_argument('--layer_decay', type=float, default=0.75,
+                        help='layer-wise lr decay from ELECTRA/BEiT')
 
     parser.add_argument('--min_lr', type=float, default=0., metavar='LR',
                         help='lower lr bound for cyclic schedulers that hit 0')
@@ -75,15 +83,18 @@ def get_args_parser():
                         help='Use class token instead of global pool for classification')
 
     # Dataset parameters
-    parser.add_argument('--data_path', default='/datasets01/imagenet_full_size/061417/', type=str,
+    parser.add_argument('--data_path', default='data_8fold_decomposed_2d_all.pt', type=str,
                         help='dataset path')
-    parser.add_argument('--nb_classes', default=1000, type=int,
+    parser.add_argument('--labels_path', default='labels_2classes_8fold_decomposed_2d_fs200.pt', type=str,
+                        help='labels path')
+    parser.add_argument('--nb_classes', default=2, type=int,
                         help='number of the classification types')
 
-    parser.add_argument('--output_dir', default='./output_dir',
+    parser.add_argument('--output_dir', default='',
                         help='path where to save, empty for no saving')
-    parser.add_argument('--log_dir', default='./output_dir',
+    parser.add_argument('--log_dir', default='./logs',
                         help='path where to tensorboard log')
+    parser.add_argument('--wandb', action='store_true', default=False)
     parser.add_argument('--device', default='cuda',
                         help='device to use for training / testing')
     parser.add_argument('--seed', default=0, type=int)
@@ -96,7 +107,7 @@ def get_args_parser():
                         help='Perform evaluation only')
     parser.add_argument('--dist_eval', action='store_true', default=False,
                         help='Enabling distributed evaluation (recommended during training for faster monitor')
-    parser.add_argument('--num_workers', default=10, type=int)
+    parser.add_argument('--num_workers', default=32, type=int)
     parser.add_argument('--pin_mem', action='store_true',
                         help='Pin CPU memory in DataLoader for more efficient (sometimes) transfer to GPU.')
     parser.add_argument('--no_pin_mem', action='store_false', dest='pin_mem')
@@ -129,20 +140,31 @@ def main(args):
     cudnn.benchmark = True
 
     # linear probe: weak augmentation
-    transform_train = transforms.Compose([
-            RandomResizedCrop(224, interpolation=3),
-            transforms.RandomHorizontalFlip(),
-            transforms.ToTensor(),
-            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])])
-    transform_val = transforms.Compose([
-            transforms.Resize(256, interpolation=3),
-            transforms.CenterCrop(224),
-            transforms.ToTensor(),
-            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])])
-    dataset_train = datasets.ImageFolder(os.path.join(args.data_path, 'train'), transform=transform_train)
-    dataset_val = datasets.ImageFolder(os.path.join(args.data_path, 'val'), transform=transform_val)
-    print(dataset_train)
-    print(dataset_val)
+    # transform_train = transforms.Compose([
+    #         RandomResizedCrop(224, interpolation=3),
+    #         transforms.RandomHorizontalFlip(),
+    #         transforms.ToTensor(),
+    #         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])])
+    # transform_val = transforms.Compose([
+    #         transforms.Resize(256, interpolation=3),
+    #         transforms.CenterCrop(224),
+    #         transforms.ToTensor(),
+    #         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])])
+    # dataset_train = datasets.ImageFolder(os.path.join(args.data_path, 'train'), transform=transform_train)
+    # dataset_val = datasets.ImageFolder(os.path.join(args.data_path, 'val'), transform=transform_val)
+
+    dataset = EEGDatasetFast(augment=True, args=args)
+    dataset_validate = EEGDatasetFast(transform=True, augment=False, args=args)
+
+    # dataloader
+    dataset_train = Subset(dataset, list(range(0, 174)))
+    if args.eval == False:
+        dataset_val = Subset(dataset_validate, list(range(174, 202)))
+    else:
+        dataset_val = Subset(dataset_validate, list(range(202, 230)))
+    
+    # print(len(dataset_train.dataset))
+    # print(len(dataset_val.dataset))
 
     if True:  # args.distributed:
         num_tasks = misc.get_world_size()
@@ -167,19 +189,27 @@ def main(args):
     if global_rank == 0 and args.log_dir is not None and not args.eval:
         os.makedirs(args.log_dir, exist_ok=True)
         log_writer = SummaryWriter(log_dir=args.log_dir)
+
+        if args.wandb == True:
+            config = vars(args)
+            wandb.init(project="MAE_He", config=config, entity="oturgut")
     else:
         log_writer = None
 
     data_loader_train = torch.utils.data.DataLoader(
-        dataset_train, sampler=sampler_train,
+        dataset_train, 
+        sampler=sampler_train,
+        # shuffle=True,
         batch_size=args.batch_size,
         num_workers=args.num_workers,
         pin_memory=args.pin_mem,
-        drop_last=True,
+        drop_last=False,
     )
 
     data_loader_val = torch.utils.data.DataLoader(
-        dataset_val, sampler=sampler_val,
+        dataset_val, 
+        sampler=sampler_val,
+        # shuffle=False,
         batch_size=args.batch_size,
         num_workers=args.num_workers,
         pin_memory=args.pin_mem,
@@ -249,11 +279,18 @@ def main(args):
         model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu])
         model_without_ddp = model.module
 
-    optimizer = LARS(model_without_ddp.head.parameters(), lr=args.lr, weight_decay=args.weight_decay)
-    print(optimizer)
+    param_groups = lrd.param_groups_lrd(model_without_ddp, args.weight_decay,
+        no_weight_decay_list=model_without_ddp.no_weight_decay(),
+        layer_decay=args.layer_decay
+    )
+    optimizer = torch.optim.AdamW(param_groups, lr=args.lr)
+    # optimizer = LARS(model_without_ddp.head.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+    # print(optimizer)
     loss_scaler = NativeScaler()
 
-    criterion = torch.nn.CrossEntropyLoss()
+    class_weights = 230.0 / (2.0 * torch.Tensor([88.0, 142.0])) # total_nb_samples / (nb_classes * samples_per_class)
+    class_weights = class_weights.to(device=device)
+    criterion = torch.nn.CrossEntropyLoss(weight=class_weights)
 
     print("criterion = %s" % str(criterion))
 
@@ -261,12 +298,12 @@ def main(args):
 
     if args.eval:
         test_stats = evaluate(data_loader_val, model, device)
-        print(f"Accuracy of the network on the {len(dataset_val)} test images: {test_stats['acc1']:.1f}%")
+        print(f"Accuracy / F1 of the network on the {len(dataset_val)} test images: {test_stats['acc1']:.1f}% / {test_stats['f1']:.1f}%")
         exit(0)
 
     print(f"Start training for {args.epochs} epochs")
     start_time = time.time()
-    max_accuracy = 0.0
+    max_accuracy, max_f1 = 0.0, 0.0
     for epoch in range(args.start_epoch, args.epochs):
         if args.distributed:
             data_loader_train.sampler.set_epoch(epoch)
@@ -283,14 +320,24 @@ def main(args):
                 loss_scaler=loss_scaler, epoch=epoch)
 
         test_stats = evaluate(data_loader_val, model, device)
-        print(f"Accuracy of the network on the {len(dataset_val)} test images: {test_stats['acc1']:.1f}%")
+        print(f"Accuracy / F1 of the network on the {len(dataset_val)} test images: {test_stats['acc1']:.1f}% / {test_stats['f1']:.1f}%")
         max_accuracy = max(max_accuracy, test_stats["acc1"])
-        print(f'Max accuracy: {max_accuracy:.2f}%')
+        max_f1 = max(max_f1, test_stats['f1'])
+        print(f'Max accuracy / F1: {max_accuracy:.2f}% / {max_f1:.2f}%')
 
         if log_writer is not None:
             log_writer.add_scalar('perf/test_acc1', test_stats['acc1'], epoch)
             log_writer.add_scalar('perf/test_acc5', test_stats['acc5'], epoch)
+            log_writer.add_scalar('perf/test_f1', test_stats['f1'], epoch)
             log_writer.add_scalar('perf/test_loss', test_stats['loss'], epoch)
+            
+            if args.wandb == True:
+                training_history = {'epoch' : epoch,
+                                    'test_acc1' : test_stats['acc1'],
+                                    'test_acc5' : test_stats['acc5'],
+                                    'test_f1' : test_stats['f1'],
+                                    'test_loss' : test_stats['loss']}
+                wandb.log(training_history)
 
         log_stats = {**{f'train_{k}': v for k, v in train_stats.items()},
                         **{f'test_{k}': v for k, v in test_stats.items()},

@@ -12,8 +12,12 @@
 import math
 import sys
 from typing import Iterable, Optional
+from timm import data
 
 import torch
+import torchmetrics
+
+import wandb
 
 from timm.data import Mixup
 from timm.utils import accuracy
@@ -39,6 +43,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
 
     if log_writer is not None:
         print('log_dir: {}'.format(log_writer.log_dir))
+        training_history = {}
 
     for data_iter_step, (samples, targets) in enumerate(metric_logger.log_every(data_loader, print_freq, header)):
 
@@ -89,6 +94,12 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
             log_writer.add_scalar('loss', loss_value_reduce, epoch_1000x)
             log_writer.add_scalar('lr', max_lr, epoch_1000x)
 
+            if args.wandb == True:
+                training_history['epoch_1000x'] = epoch_1000x
+                training_history['loss'] = loss_value_reduce
+                training_history['lr'] = max_lr
+                wandb.log(training_history)
+
     # gather the stats from all processes
     metric_logger.synchronize_between_processes()
     print("Averaged stats:", metric_logger)
@@ -104,6 +115,9 @@ def evaluate(data_loader, model, device):
 
     # switch to evaluation mode
     model.eval()
+    # metric_f1 = torchmetrics.F1Score(num_classes=2, threshold=0.5, average=None).to(device=device)
+    #### THIS IS ONLY FOR SEED ####
+    metric_f1 = torchmetrics.F1Score(num_classes=3, threshold=0.5, average=None).to(device=device)
 
     for batch in metric_logger.log_every(data_loader, 10, header):
         images = batch[0]
@@ -116,15 +130,24 @@ def evaluate(data_loader, model, device):
             output = model(images)
             loss = criterion(output, target)
 
+        print("Target: ", target)
+        print("Predicted target: ", torch.argmax(output, dim=1))
+
         acc1, acc5 = accuracy(output, target, topk=(1, 5))
+        f1 = metric_f1(output.argmax(dim=-1), target)
 
         batch_size = images.shape[0]
         metric_logger.update(loss=loss.item())
         metric_logger.meters['acc1'].update(acc1.item(), n=batch_size)
         metric_logger.meters['acc5'].update(acc5.item(), n=batch_size)
+        metric_logger.meters['f1'].update(100*f1[0].item(), n=batch_size)
+
+    f1 = 100*metric_f1.compute()[0] # returns the f1 score for class 0
+    metric_f1.reset()
+
     # gather the stats from all processes
     metric_logger.synchronize_between_processes()
-    print('* Acc@1 {top1.global_avg:.3f} Acc@5 {top5.global_avg:.3f} loss {losses.global_avg:.3f}'
-          .format(top1=metric_logger.acc1, top5=metric_logger.acc5, losses=metric_logger.loss))
+    print('* Acc@1 {top1.global_avg:.3f} Acc@5 {top5.global_avg:.3f} F1 (class 0) {f1.global_avg:.3f} loss {losses.global_avg:.3f}'
+          .format(top1=metric_logger.acc1, top5=metric_logger.acc5, f1=metric_logger.f1, losses=metric_logger.loss))
 
     return {k: meter.global_avg for k, meter in metric_logger.meters.items()}
