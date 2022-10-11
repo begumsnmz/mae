@@ -40,7 +40,7 @@ class EEGDatasetFast(Dataset):
             #                                 CropResizing(fixed_len=True)])
             # transform = Normalization()
             # transform = CropResizing(fixed_len=self.args.input_size[-1], start_idx=3000) 
-            transform = CropResizing(fixed_len=self.args.input_size[-1], start_idx=0) # THIS IS ONLY FOR SEED
+            transform = transforms.Compose([CropResizing(fixed_len=self.args.input_size[-1], start_idx=3000)]) # THIS IS ONLY FOR SEED
             data = transform(data)
 
         if self.augment == True:

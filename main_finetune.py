@@ -199,19 +199,19 @@ def main(args):
     dataset_validate = EEGDatasetFast(transform=True, augment=False, args=args)
 
     # dataloader
-    # dataset_train = Subset(dataset, list(range(0, 138)))
-    # if args.eval == False:
-    #     dataset_val = Subset(dataset_validate, list(range(138, 184)))
-    # else:
-    #     dataset_val = Subset(dataset_validate, list(range(184, 230)))
-
-    ### THIS IS ONLY FOR SEED
-    dataset_train = Subset(dataset, list(range(112, 559)))
-    # dataset_train = ConcatDataset([Subset(dataset, list(range(0, 12))), Subset(dataset, list(range(12, 15)))])
+    dataset_train = Subset(dataset, list(range(0, int(138*1))))
     if args.eval == False:
-        dataset_val = Subset(dataset_validate, list(range(0, 112)))
+        dataset_val = Subset(dataset_validate, list(range(int(138*1), int(184*1))))
     else:
-        dataset_val = Subset(dataset_validate, list(range(112, 559)))
+        dataset_val = Subset(dataset_validate, list(range(int(184*1), int(230*1))))
+
+    # ### THIS IS ONLY FOR SEED
+    # dataset_train = Subset(dataset, list(range(0, 448)))
+    # # dataset_train = ConcatDataset([Subset(dataset, list(range(0, 112))), Subset(dataset, list(range(224, 559)))])
+    # if args.eval == False:
+    #     dataset_val = Subset(dataset_validate, list(range(448, 559)))
+    # else:
+    #     dataset_val = Subset(dataset_validate, list(range(112, 559)))
 
     if True:  # args.distributed:
         num_tasks = misc.get_world_size()
@@ -337,9 +337,9 @@ def main(args):
     optimizer = torch.optim.AdamW(param_groups, lr=args.lr)
     loss_scaler = NativeScaler()
 
-    # class_weights = 230.0 / (2.0 * torch.Tensor([88.0, 142.0])) # total_nb_samples / (nb_classes * samples_per_class)
-    ################# THIS IS ONLY FOR SEED #################
-    class_weights = 900.0 / (3.0 * torch.Tensor([293.0, 311.0, 296.0])) # total_nb_samples / (nb_classes * samples_per_class) 
+    class_weights = 230.0 / (2.0 * torch.Tensor([88.0, 142.0])) # total_nb_samples / (nb_classes * samples_per_class)
+    # ################# THIS IS ONLY FOR SEED #################
+    # class_weights = 900.0 / (3.0 * torch.Tensor([293.0, 311.0, 296.0])) # total_nb_samples / (nb_classes * samples_per_class) 
     class_weights = class_weights.to(device=device)
     if mixup_fn is not None:
         # smoothing is handled with mixup label transform

@@ -14,7 +14,7 @@ class Normalization(object):
         std = sample.std(axis=-1)
 
         # transpose to match the vector dimensions
-        return ((sample.permute(dims=(1, 0)) - mean) / std).permute(dims=(1, 0))
+        return ((sample.permute(dims=(2, 0, 1)) - mean) / std).permute(dims=(1, 2, 0))
 
 
 class MinMaxScaling(object):

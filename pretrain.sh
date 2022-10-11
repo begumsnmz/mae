@@ -5,22 +5,22 @@
 seed="on"
 
 if [ "$seed" = "on" ]; then
-    batch_size="32"
-    accum_iter=(14) #29
+    batch_size="64"
+    accum_iter=(6) #29
 else
-    batch_size="16"
-    accum_iter=(8)
+    batch_size="4096"
+    accum_iter=(1)
 fi
 epochs="250"
-warmup_epochs="25"
+warmup_epochs="15"
 
 input_channels="5"
 input_electrodes="65"
-time_steps="12"
+time_steps="37000"
 model="mae_vit_base_patch20"
 
 patch_height=$input_electrodes
-patch_width="1"
+patch_width="200"
 
 mask_ratio="0.75"
 
@@ -28,8 +28,8 @@ weight_decay="0.05"
 
 blr_array=(1e-5)
 
-data_path="/home/oturgut/PyTorchEEG/data/preprocessed/data_10fold_decomposed_2d_fs200.pt"
-labels_path="/home/oturgut/PyTorchEEG/data/preprocessed/labels_2classes_10fold_fs200.pt"
+data_path="/home/oturgut/PyTorchEEG/data/preprocessed/data_TARGET_10fold_decomposed_ideal_fs200.pt"
+labels_path="/home/oturgut/PyTorchEEG/data/preprocessed/labels_2classes_TARGET_10fold_fs200.pt"
 
 # transfer_data_path="/home/oturgut/PyTorchEEG/data/preprocessed/data_SEED_decomposed_2d_fs200.pt"
 # transfer_labels_path="/home/oturgut/PyTorchEEG/data/preprocessed/labels_2classes_SEED_fs200.pt"
@@ -44,10 +44,10 @@ do
     for acc_it in "${accum_iter[@]}"
     do
         if [ "$seed" = "on" ]; then
-            folder="onlySeed"
+            folder="seed"
             pre_data="pre_"$folder"_b"$(($batch_size*$acc_it))"_blr"$blr
 
-            subfolder="snippets6s/p100/de_features/5fold"
+            subfolder="0.6train/10fold/decomposed"
             output_dir="./output/pre/"$folder"/"$subfolder"/"$pre_data
             log_dir="./logs/pre/"$folder"/"$subfolder"/"$pre_data
 
@@ -56,7 +56,7 @@ do
             folder="noSeed"
             pre_data="pre_"$folder"_b"$(($batch_size*$acc_it))"_blr"$blr
 
-            subfolder="0.6train/10fold"
+            subfolder="snippets6s/p100/de_features"
             output_dir="./output/pre/"$folder"/"$subfolder"/"$pre_data
             log_dir="./logs/pre/"$folder"/"$subfolder"/"$pre_data
         

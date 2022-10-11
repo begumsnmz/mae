@@ -115,9 +115,9 @@ def evaluate(data_loader, model, device):
 
     # switch to evaluation mode
     model.eval()
-    # metric_f1 = torchmetrics.F1Score(num_classes=2, threshold=0.5, average=None).to(device=device)
-    #### THIS IS ONLY FOR SEED ####
-    metric_f1 = torchmetrics.F1Score(num_classes=3, threshold=0.5, average=None).to(device=device)
+    metric_f1 = torchmetrics.F1Score(num_classes=2, threshold=0.5, average=None).to(device=device)
+    # #### THIS IS ONLY FOR SEED ####
+    # metric_f1 = torchmetrics.F1Score(num_classes=3, threshold=0.5, average=None).to(device=device)
 
     for batch in metric_logger.log_every(data_loader, 10, header):
         images = batch[0]
