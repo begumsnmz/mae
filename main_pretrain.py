@@ -172,6 +172,10 @@ def main(args):
         # dataset_seed = Subset(dataset_seed, list(range(0, 448)))
         # dataset_seed = ConcatDataset([Subset(dataset_seed, list(range(0, 112))), Subset(dataset_seed, list(range(224, 559)))])
 
+        # args.data_path = "/home/oturgut/PyTorchEEG/data/preprocessed/data_MOIM_snippets60s_decomposed_ideal_fs200.pt"
+        # args.labels_path = "/home/oturgut/PyTorchEEG/data/preprocessed/labels_2classes_MOIM_snippets60s_fs200.pt"
+        # dataset_moim = EEGDatasetFast(augment=True, args=args)
+
         # args.data_path = "/home/oturgut/PyTorchEEG/data/preprocessed/data_LEMON_ec_decomposed_2d_fs200.pt"
         # args.labels_path = "/home/oturgut/PyTorchEEG/data/preprocessed/labels_2classes_LEMON_fs200.pt"
         # dataset_lemon_ec = EEGDatasetFast(augment=True, args=args)

@@ -12,6 +12,7 @@
 import argparse
 import datetime
 import json
+from typing import Tuple
 import numpy as np
 import os
 import time
@@ -56,6 +57,22 @@ def get_args_parser():
     # Model parameters
     parser.add_argument('--model', default='vit_base_patch224', type=str, metavar='MODEL',
                         help='Name of model to train')
+    
+    parser.add_argument('--input_channels', type=int, default=5, metavar='N',
+                        help='input channels')
+    parser.add_argument('--input_electrodes', type=int, default=65, metavar='N',
+                        help='input electrodes')
+    parser.add_argument('--time_steps', type=int, default=37000, metavar='N',
+                        help='input length')
+    parser.add_argument('--input_size', default=(5, 65, 37000), type=Tuple,
+                        help='images input size')
+
+    parser.add_argument('--patch_height', type=int, default=65, metavar='N',
+                        help='patch height')
+    parser.add_argument('--patch_width', type=int, default=200, metavar='N',
+                        help='patch width')
+    parser.add_argument('--patch_size', default=(65, 200), type=Tuple,
+                        help='patch size')
 
     # Optimizer parameters
     parser.add_argument('--weight_decay', type=float, default=0,
@@ -125,6 +142,9 @@ def get_args_parser():
 
 
 def main(args):
+    args.input_size = (args.input_channels, args.input_electrodes, args.time_steps)
+    args.patch_size = (args.patch_height, args.patch_width)
+
     misc.init_distributed_mode(args)
 
     print('job dir: {}'.format(os.path.dirname(os.path.realpath(__file__))))
@@ -157,14 +177,11 @@ def main(args):
     dataset_validate = EEGDatasetFast(transform=True, augment=False, args=args)
 
     # dataloader
-    dataset_train = Subset(dataset, list(range(0, 174)))
+    dataset_train = Subset(dataset, list(range(0, int(138*1))))
     if args.eval == False:
-        dataset_val = Subset(dataset_validate, list(range(174, 202)))
+        dataset_val = Subset(dataset_validate, list(range(int(138*1), int(184*1))))
     else:
-        dataset_val = Subset(dataset_validate, list(range(202, 230)))
-    
-    # print(len(dataset_train.dataset))
-    # print(len(dataset_val.dataset))
+        dataset_val = Subset(dataset_validate, list(range(int(184*1), int(230*1))))
 
     if True:  # args.distributed:
         num_tasks = misc.get_world_size()
@@ -217,6 +234,8 @@ def main(args):
     )
 
     model = models_vit.__dict__[args.model](
+        img_size=args.input_size,
+        patch_size=args.patch_size,
         num_classes=args.nb_classes,
         global_pool=args.global_pool,
     )

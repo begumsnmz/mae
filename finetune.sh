@@ -13,7 +13,7 @@ warmup_epochs="5"
 input_channels="1"
 input_electrodes="65"
 time_steps="37000"
-model="vit_base_patch20"
+model="vit_base_patchX"
 drop_path="0.1"
 
 patch_height=$input_electrodes

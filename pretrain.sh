@@ -1,10 +1,10 @@
 #!/usr/bin/bash
 # pretraining
 
-# check whether seed dataset is included in pretraining
-seed="on"
+# check whether external dataset is included in pretraining
+external="on"
 
-if [ "$seed" = "on" ]; then
+if [ "$external" = "on" ]; then
     batch_size="64"
     accum_iter=(6) #29
 else
@@ -17,7 +17,7 @@ warmup_epochs="15"
 input_channels="5"
 input_electrodes="65"
 time_steps="37000"
-model="mae_vit_base_patch20"
+model="mae_vit_base_patchX"
 
 patch_height=$input_electrodes
 patch_width="200"
@@ -43,7 +43,7 @@ do
 
     for acc_it in "${accum_iter[@]}"
     do
-        if [ "$seed" = "on" ]; then
+        if [ "$external" = "on" ]; then
             folder="seed"
             pre_data="pre_"$folder"_b"$(($batch_size*$acc_it))"_blr"$blr
 

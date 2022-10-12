@@ -10,10 +10,10 @@ blr=(1e-2)
 epochs="50"
 warmup_epochs="5"
 
-input_channels="1"
+input_channels="5"
 input_electrodes="65"
 time_steps="37000"
-model="vit_base_patch20"
+model="vit_base_patchX"
 drop_path="0.1"
 
 patch_height=$input_electrodes
@@ -24,7 +24,7 @@ layer_decay="0.75"
 
 smoothing="0.1" # label smoothing; changes the optimizer used
 
-data_path="/home/oturgut/PyTorchEEG/data/preprocessed/data_TARGET_10fold_fs200.pt"
+data_path="/home/oturgut/PyTorchEEG/data/preprocessed/data_TARGET_10fold_decomposed_ideal_fs200.pt"
 labels_path="/home/oturgut/PyTorchEEG/data/preprocessed/labels_2classes_TARGET_10fold_fs200.pt"
 nb_classes="2"
 
@@ -40,7 +40,7 @@ pre_batch_size=(384)
 pre_blr=(1e-5)
 
 folder="seed"
-subfolder=("0.6train/10fold/1d")
+subfolder=("0.6train/10fold/decomposed")
 
 for pre_bs in "${pre_batch_size[@]}"
 do
@@ -50,18 +50,14 @@ do
         do
 
             pre_data=$folder"_b"$pre_bs"_blr"$pre_lr
-            if [ "$folder" = "onlySeed" ]; then
-                finetune="/home/oturgut/PyTorchEEG/mae_he/mae/output/pre/"$folder"/"$subf"/pre_"$pre_data"/checkpoint-249.pth"
-            else
-                finetune="/home/oturgut/PyTorchEEG/mae_he/mae/output/pre/"$folder"/"$subf"/pre_"$pre_data"/checkpoint-249.pth"
-            fi
+            finetune="/home/oturgut/PyTorchEEG/mae_he/mae/output/pre/"$folder"/"$subf"/pre_"$pre_data"/checkpoint-249.pth"
 
             for bs in "${batch_size[@]}"
             do
                 for lr in "${blr[@]}"
                 do
                     output_dir="./output/fin/"$folder"/"$subf"/fin_b"$bs"_blr"$lr"_"$pre_data
-                    log_dir="./logs/fin/"$folder"/"$subf"/fin_b"$bs"_blr"$lr"_"$pre_data
+                    log_dir="./logs/fin/"$folder"/"$subf"/test_fin_b"$bs"_blr"$lr"_"$pre_data
 
                     # resume="/home/oturgut/PyTorchEEG/mae_he/mae/output/fin/"$folder"/"$subfolder"/fin_b"$bs"_blr"$lr"_"$pre_data"/checkpoint-18.pth"
                 
