@@ -163,19 +163,32 @@ def main(args):
 
     # load data
     dataset_mri = EEGDatasetFast(augment=True, args=args)
-    dataset_mri_train = Subset(dataset_mri, list(range(0, int(138*1))))
+    # dataset_mri_train = Subset(dataset_mri, list(range(int(0*1), int(114*1))))
+    dataset_mri_train = Subset(dataset_mri, list(range(int(0*1), int(138*1))))
 
     if args.transfer_learning == True:
-        args.data_path = "/home/oturgut/PyTorchEEG/data/preprocessed/data_SEED_decomposed_ideal_fs200.pt"
-        args.labels_path = "/home/oturgut/PyTorchEEG/data/preprocessed/labels_3classes_SEED_fs200.pt"
-        dataset_seed = EEGDatasetFast(augment=True, args=args)
-        # dataset_seed = Subset(dataset_seed, list(range(0, 448)))
-        # dataset_seed = ConcatDataset([Subset(dataset_seed, list(range(0, 112))), Subset(dataset_seed, list(range(224, 559)))])
+        # GENERAL
+        args.data_path = args.transfer_data_path
+        args.labels_path = args.transfer_labels_path
+        dataset_external = EEGDatasetFast(augment=True, args=args)
+        dataset_train = ConcatDataset([dataset_mri_train, dataset_external])
 
+        # # SEED
+        # args.data_path = "/home/oturgut/PyTorchEEG/data/preprocessed/data_SEED_decomposed_ideal_fs200.pt"
+        # args.labels_path = "/home/oturgut/PyTorchEEG/data/preprocessed/labels_3classes_SEED_fs200.pt"
+        # dataset_seed = EEGDatasetFast(augment=True, args=args)
+        # # dataset_seed = Subset(dataset_seed, list(range(0, 448)))
+        # # dataset_seed = ConcatDataset([Subset(dataset_seed, list(range(0, 112))), Subset(dataset_seed, list(range(224, 559)))])
+        # # dataset_train = dataset_seed
+        # dataset_train = ConcatDataset([dataset_mri_train, dataset_seed])
+
+        # # MOIM
         # args.data_path = "/home/oturgut/PyTorchEEG/data/preprocessed/data_MOIM_snippets60s_decomposed_ideal_fs200.pt"
         # args.labels_path = "/home/oturgut/PyTorchEEG/data/preprocessed/labels_2classes_MOIM_snippets60s_fs200.pt"
         # dataset_moim = EEGDatasetFast(augment=True, args=args)
+        # dataset_train = ConcatDataset([dataset_mri_train, dataset_moim])
 
+        # # LEMON
         # args.data_path = "/home/oturgut/PyTorchEEG/data/preprocessed/data_LEMON_ec_decomposed_2d_fs200.pt"
         # args.labels_path = "/home/oturgut/PyTorchEEG/data/preprocessed/labels_2classes_LEMON_fs200.pt"
         # dataset_lemon_ec = EEGDatasetFast(augment=True, args=args)
@@ -183,9 +196,7 @@ def main(args):
         # args.data_path = "/home/oturgut/PyTorchEEG/data/preprocessed/data_LEMON_eo_decomposed_2d_fs200.pt"
         # args.labels_path = "/home/oturgut/PyTorchEEG/data/preprocessed/labels_2classes_LEMON_fs200.pt"
         # dataset_lemon_eo = EEGDatasetFast(augment=True, args=args)
-
-        dataset_train = ConcatDataset([dataset_mri_train, dataset_seed])
-        # dataset_train = dataset_seed
+        # dataset_train = ConcatDataset([dataset_mri_train, dataset_lemon_ec, dataset_lemon_eo])
     else:
         dataset_train = dataset_mri_train
     
@@ -229,9 +240,11 @@ def main(args):
     )
 
     model.to(device)
+    n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
 
     model_without_ddp = model
     print("Model = %s" % str(model_without_ddp))
+    print('Number of params (M): %.2f' % (n_parameters / 1.e6))
 
     eff_batch_size = args.batch_size * args.accum_iter * misc.get_world_size()
     

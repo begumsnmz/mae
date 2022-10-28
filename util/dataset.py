@@ -11,11 +11,10 @@ from util.augmentations import Jitter, Masking, Rescaling, Permutation, Shift, T
 
 class EEGDatasetFast(Dataset):
     """Fast EEGDataset (fetching prepared data and labels from files)"""
-    def __init__(self, transform=False, augment=False, mode=None, args=None) -> None:
+    def __init__(self, transform=False, augment=False, args=None) -> None:
         """load data and labels from files"""
         self.transform = transform
         self.augment = augment
-        self.mode = mode
         
         self.args = args
 
@@ -33,26 +32,17 @@ class EEGDatasetFast(Dataset):
         if self.args.input_size[0] == 1:
             data = data.unsqueeze(dim=0)
 
-        data = data[:, :self.args.input_electrodes]
+        data = data[:, :self.args.input_electrodes, :]
 
         if self.transform == True:
-            # transform = transforms.Compose([TimeToFourier(), 
-            #                                 CropResizing(fixed_len=True)])
-            # transform = Normalization()
-            # transform = CropResizing(fixed_len=self.args.input_size[-1], start_idx=3000) 
-            transform = transforms.Compose([CropResizing(fixed_len=self.args.input_size[-1], start_idx=3000)]) # THIS IS ONLY FOR SEED
+            transform = transforms.Compose([CropResizing(fixed_len=self.args.input_size[-1], start_idx=3000)])
             data = transform(data)
 
         if self.augment == True:
-            if self.mode is None:
-                augment = transforms.Compose([Jitter(),
-                                              Rescaling(),
-                                              CropResizing(fixed_len=self.args.input_size[-1])])
-            else:
-                augment = transforms.Compose([Jitter(),
-                                              Rescaling(),
-                                              CropResizing(fixed_len=self.args.input_size[-1]),
-                                              Permutation()])
+            augment = transforms.Compose([Jitter(),
+                                          Rescaling(),
+                                          CropResizing(fixed_len=self.args.input_size[-1])])
+
             data = augment(data)
 
         return data, label.type(torch.LongTensor).argmax(dim=-1)

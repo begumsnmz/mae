@@ -51,8 +51,9 @@ class MaskedAutoencoderViT(nn.Module):
         self.decoder_pos_embed = nn.Parameter(torch.zeros(1, num_patches + 1, decoder_embed_dim), requires_grad=False)  # fixed sin-cos embedding
 
         self.decoder_blocks = nn.ModuleList([
-            Block(decoder_embed_dim, decoder_num_heads, mlp_ratio, qkv_bias=True, norm_layer=norm_layer)
-            for i in range(decoder_depth)])
+            Block(decoder_embed_dim, decoder_num_heads, mlp_ratio, qkv_bias=True, act_layer=nn.GELU, norm_layer=norm_layer)
+            for i in range(decoder_depth-1+1)])
+            # + [Block(decoder_embed_dim, decoder_num_heads, mlp_ratio, qkv_bias=True, act_layer=nn.Tanh, norm_layer=norm_layer)])
 
         self.decoder_norm = norm_layer(decoder_embed_dim)
         self.decoder_pred = nn.Linear(decoder_embed_dim, patch_size[0] * patch_size[1] * img_size[0], bias=True) # decoder to patch
@@ -224,6 +225,13 @@ class MaskedAutoencoderViT(nn.Module):
         return loss, pred, mask
 
 
+def mae_vit_small_patchX_dec384d6b(**kwargs):
+    model = MaskedAutoencoderViT(
+        embed_dim=512, depth=8, num_heads=8,
+        decoder_embed_dim=384, decoder_depth=6, decoder_num_heads=12,
+        mlp_ratio=4, norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
+    return model
+
 def mae_vit_base_patch200_dec512d8b(**kwargs):
     model = MaskedAutoencoderViT(
         patch_size=(65, 200), embed_dim=768, depth=12, num_heads=12,
@@ -266,6 +274,13 @@ def mae_vit_large_patch224_dec512d8b(**kwargs):
         mlp_ratio=4, norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
     return model
 
+def mae_vit_large_patchX_dec512d8b(**kwargs):
+    model = MaskedAutoencoderViT(
+        embed_dim=1024, depth=24, num_heads=16,
+        decoder_embed_dim=512, decoder_depth=8, decoder_num_heads=16,
+        mlp_ratio=4, norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
+    return model
+
 def mae_vit_huge_patch112_dec512d8b(**kwargs):
     model = MaskedAutoencoderViT(
         patch_size=(65, 112), embed_dim=1280, depth=32, num_heads=16,
@@ -273,12 +288,25 @@ def mae_vit_huge_patch112_dec512d8b(**kwargs):
         mlp_ratio=4, norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
     return model
 
+def mae_vit_huge_patchX_dec512d8b(**kwargs):
+    model = MaskedAutoencoderViT(
+        embed_dim=1280, depth=32, num_heads=16,
+        decoder_embed_dim=512, decoder_depth=8, decoder_num_heads=16,
+        mlp_ratio=4, norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
+    return model
+
 
 # set recommended archs
+mae_vit_small_patchX = mae_vit_small_patchX_dec384d6b  # decoder: 512 dim, 8 blocks
+
 mae_vit_base_patch200 = mae_vit_base_patch200_dec512d8b  # decoder: 512 dim, 8 blocks
 mae_vit_base_patch100 = mae_vit_base_patch100_dec512d8b  # decoder: 512 dim, 8 blocks
 mae_vit_base_patch50 = mae_vit_base_patch50_dec512d8b  # decoder: 512 dim, 8 blocks
 mae_vit_base_patch10 = mae_vit_base_patch10_dec512d8b  # decoder: 512 dim, 8 blocks
 mae_vit_base_patchX = mae_vit_base_patchX_dec512d8b  # decoder: 512 dim, 8 blocks
+
 mae_vit_large_patch224 = mae_vit_large_patch224_dec512d8b  # decoder: 512 dim, 8 blocks
+mae_vit_large_patchX = mae_vit_large_patchX_dec512d8b  # decoder: 512 dim, 8 blocks
+
 mae_vit_huge_patch112 = mae_vit_huge_patch112_dec512d8b  # decoder: 512 dim, 8 blocks
+mae_vit_huge_patchX = mae_vit_huge_patchX_dec512d8b  # decoder: 512 dim, 8 blocks

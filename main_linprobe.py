@@ -176,8 +176,8 @@ def main(args):
     dataset = EEGDatasetFast(augment=True, args=args)
     dataset_validate = EEGDatasetFast(transform=True, augment=False, args=args)
 
-    # dataloader
-    dataset_train = Subset(dataset, list(range(0, int(138*1))))
+    # dataloader (NOTE: adjust the class weights for the criterion below)
+    dataset_train = Subset(dataset, list(range(int(0*1), int(138*1))))
     if args.eval == False:
         dataset_val = Subset(dataset_validate, list(range(int(138*1), int(184*1))))
     else:
@@ -281,7 +281,7 @@ def main(args):
     n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
 
     print("Model = %s" % str(model_without_ddp))
-    print('number of params (M): %.2f' % (n_parameters / 1.e6))
+    print('Number of params (M): %.2f' % (n_parameters / 1.e6))
 
     eff_batch_size = args.batch_size * args.accum_iter * misc.get_world_size()
     
@@ -307,6 +307,7 @@ def main(args):
     # print(optimizer)
     loss_scaler = NativeScaler()
 
+    # class_weights = 189.0 / (2.0 * torch.Tensor([88.0, 101.0])) # total_nb_samples / (nb_classes * samples_per_class)
     class_weights = 230.0 / (2.0 * torch.Tensor([88.0, 142.0])) # total_nb_samples / (nb_classes * samples_per_class)
     class_weights = class_weights.to(device=device)
     criterion = torch.nn.CrossEntropyLoss(weight=class_weights)
@@ -317,12 +318,12 @@ def main(args):
 
     if args.eval:
         test_stats = evaluate(data_loader_val, model, device)
-        print(f"Accuracy / F1 of the network on the {len(dataset_val)} test images: {test_stats['acc1']:.1f}% / {test_stats['f1']:.1f}%")
+        print(f"Accuracy / F1 / AUROC of the network on the {len(dataset_val)} test images: {test_stats['acc1']:.1f}% / {test_stats['f1']:.1f}% / {test_stats['auroc']:.1f}%")
         exit(0)
 
     print(f"Start training for {args.epochs} epochs")
     start_time = time.time()
-    max_accuracy, max_f1 = 0.0, 0.0
+    max_accuracy, max_f1, max_auroc = 0.0, 0.0, 0.0
     for epoch in range(args.start_epoch, args.epochs):
         if args.distributed:
             data_loader_train.sampler.set_epoch(epoch)
@@ -339,22 +340,25 @@ def main(args):
                 loss_scaler=loss_scaler, epoch=epoch)
 
         test_stats = evaluate(data_loader_val, model, device)
-        print(f"Accuracy / F1 of the network on the {len(dataset_val)} test images: {test_stats['acc1']:.1f}% / {test_stats['f1']:.1f}%")
+        print(f"Accuracy / F1 / AUROC of the network on the {len(dataset_val)} test images: {test_stats['acc1']:.1f}% / {test_stats['f1']:.1f}% / {test_stats['auroc']:.1f}%")
         max_accuracy = max(max_accuracy, test_stats["acc1"])
         max_f1 = max(max_f1, test_stats['f1'])
-        print(f'Max accuracy / F1: {max_accuracy:.2f}% / {max_f1:.2f}%')
+        max_auroc = max(max_auroc, test_stats['auroc'])
+        print(f'Max accuracy / F1 / AUROC: {max_accuracy:.2f}% / {max_f1:.2f}% / {max_auroc:.2f}%')
 
         if log_writer is not None:
             log_writer.add_scalar('perf/test_acc1', test_stats['acc1'], epoch)
-            log_writer.add_scalar('perf/test_acc5', test_stats['acc5'], epoch)
+            #log_writer.add_scalar('perf/test_acc5', test_stats['acc5'], epoch)
             log_writer.add_scalar('perf/test_f1', test_stats['f1'], epoch)
+            log_writer.add_scalar('perf/test_auroc', test_stats['auroc'], epoch)
             log_writer.add_scalar('perf/test_loss', test_stats['loss'], epoch)
             
             if args.wandb == True:
                 training_history = {'epoch' : epoch,
                                     'test_acc1' : test_stats['acc1'],
-                                    'test_acc5' : test_stats['acc5'],
+                                    #'test_acc5' : test_stats['acc5'],
                                     'test_f1' : test_stats['f1'],
+                                    'test_auroc' : test_stats['auroc'],
                                     'test_loss' : test_stats['loss']}
                 wandb.log(training_history)
 

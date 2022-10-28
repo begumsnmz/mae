@@ -136,27 +136,24 @@ class CropResizing(object):
     def __call__(self, sample) -> Any:
         sample_dims = sample.dim()
         
-        # define cut-off point and crop size
+        # define crop size
         if self.fixed_len is not None:
             target_len = self.fixed_len
-            if self.start_idx is not None:
-                start_idx = self.start_idx
-            else:
-                try:
-                    start_idx = np.random.randint(low=0, high=sample.shape[-1]-target_len)
-                except ValueError:
-                    # if sample.shape[-1]-target_len == 0, np.random.randint() throws an error
-                    start_idx = 0 
         else:
             # randomly sample the target length from a uniform distribution
             target_len = int(sample.shape[-1]*np.random.uniform(low=self.lower_bnd, high=self.upper_bnd))
+        
+        # define cut-off point
+        if self.start_idx is not None:
+            start_idx = self.start_idx
+        else:
             # randomly sample the starting point for the cropping (cut-off)
             try:
                 start_idx = np.random.randint(low=0, high=sample.shape[-1]-target_len)
             except ValueError:
                 # if sample.shape[-1]-target_len == 0, np.random.randint() throws an error
                 start_idx = 0 
-        
+
         cropped_sample = torch.zeros_like(sample)
 
         # resize to original length
