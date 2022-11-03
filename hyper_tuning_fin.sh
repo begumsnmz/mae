@@ -2,9 +2,9 @@
 # hyperparameter tuning for finetuning
 
 # HYPERPARAMETERS
-batch_size=(16)
+batch_size=(32)
 accum_iter=(1)
-blr=(1e-2)
+blr=(3e-4)
 
 # FIXED PARAMETERS
 epochs="50"
@@ -12,20 +12,20 @@ warmup_epochs="5"
 
 input_channels="5"
 input_electrodes="65"
-time_steps="37000"
-model="vit_base_patchX"
+time_steps="20000"
+model="vit_small_patchX"
 drop_path="0.1"
 
 patch_height=$input_electrodes
-patch_width="200"
+patch_width="10"
 
 weight_decay="0.05"
 layer_decay="0.75"
 
 smoothing="0.1" # label smoothing; changes the optimizer used
 
-data_path="/home/oturgut/PyTorchEEG/data/preprocessed/data_TARGET_10fold_decomposed_ideal_fs200.pt"
-labels_path="/home/oturgut/PyTorchEEG/data/preprocessed/labels_2classes_TARGET_10fold_fs200.pt"
+data_path="/home/oturgut/PyTorchEEG/data/test/data_DINH_10fold_normalized_decomposed_fs200.pt"
+labels_path="/home/oturgut/PyTorchEEG/data/raw/labels_2classes_DINH_10fold_fs200.pt"
 nb_classes="2"
 
 # #### THIS IS ONLY FOR SEED
@@ -36,13 +36,13 @@ nb_classes="2"
 global_pool="False"
 num_workers="32"
 
-pre_batch_size=(128)
-pre_blr=(1e-5)
+pre_batch_size=(32)
+pre_blr=(1e-2)
 
 folder="noExternal"
-subfolder=("test_changes")
+subfolder=("decomposed_t20000_p10_m0.4")
 
-output="False"
+output="True"
 
 for pre_bs in "${pre_batch_size[@]}"
 do
@@ -52,14 +52,14 @@ do
         do
 
             pre_data=$folder"_b"$pre_bs"_blr"$pre_lr
-            finetune="/home/oturgut/PyTorchEEG/mae_he/mae/output/pre/"$folder"/"$subf"/pre_"$pre_data"/checkpoint-249.pth"
+            finetune="/home/oturgut/PyTorchEEG/mae_he/mae/output/pre/"$folder"/"$subf"/pre_"$pre_data"/checkpoint-0.pth"
 
             for bs in "${batch_size[@]}"
             do
                 for lr in "${blr[@]}"
                 do
-                    output_dir="./output/fin/"$folder"/"$subf"/fin_b"$bs"_blr"$lr"_"$pre_data
-                    log_dir="./logs/fin/"$folder"/"$subf"/fin_b"$bs"_blr"$lr"_"$pre_data
+                    output_dir="./output/fin/"$folder"/"$subf"/test_fin_b"$bs"_blr"$lr"_"$pre_data
+                    log_dir="./logs/fin/"$folder"/"$subf"/test_fin_b"$bs"_blr"$lr"_"$pre_data
 
                     # resume="/home/oturgut/PyTorchEEG/mae_he/mae/output/fin/"$folder"/"$subfolder"/fin_b"$bs"_blr"$lr"_"$pre_data"/checkpoint-32.pth"
                 

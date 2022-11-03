@@ -94,8 +94,7 @@ def get_args_parser():
     # * Finetuning params
     parser.add_argument('--finetune', default='',
                         help='finetune from checkpoint')
-    parser.add_argument('--global_pool', action='store_true')
-    parser.set_defaults(global_pool=False)
+    parser.add_argument('--global_pool', action='store_true', default=False)
     parser.add_argument('--cls_token', action='store_false', dest='global_pool',
                         help='Use class token instead of global pool for classification')
 
@@ -125,10 +124,9 @@ def get_args_parser():
     parser.add_argument('--dist_eval', action='store_true', default=False,
                         help='Enabling distributed evaluation (recommended during training for faster monitor')
     parser.add_argument('--num_workers', default=32, type=int)
-    parser.add_argument('--pin_mem', action='store_true',
+    parser.add_argument('--pin_mem', action='store_true', default=True,
                         help='Pin CPU memory in DataLoader for more efficient (sometimes) transfer to GPU.')
     parser.add_argument('--no_pin_mem', action='store_false', dest='pin_mem')
-    parser.set_defaults(pin_mem=True)
 
     # distributed training parameters
     parser.add_argument('--world_size', default=1, type=int,
@@ -177,11 +175,20 @@ def main(args):
     dataset_validate = EEGDatasetFast(transform=True, augment=False, args=args)
 
     # dataloader (NOTE: adjust the class weights for the criterion below)
-    dataset_train = Subset(dataset, list(range(int(0*1), int(138*1))))
+    class_weights = 189.0 / (2.0 * torch.Tensor([88.0, 101.0])) # total_nb_samples / (nb_classes * samples_per_class)
+    # class_weights = 230.0 / (2.0 * torch.Tensor([88.0, 142.0])) # total_nb_samples / (nb_classes * samples_per_class)
+    
+    dataset_train = Subset(dataset, list(range(int(0*1), int(114*1))))
+    # dataset_train = Subset(dataset, list(range(int(0*1), int(138*1))))
     if args.eval == False:
-        dataset_val = Subset(dataset_validate, list(range(int(138*1), int(184*1))))
+        dataset_val = Subset(dataset_validate, list(range(int(114*1), int(152*1))))
+        # dataset_val = Subset(dataset_validate, list(range(int(138*1), int(184*1))))
     else:
-        dataset_val = Subset(dataset_validate, list(range(int(184*1), int(230*1))))
+        dataset_val = Subset(dataset_validate, list(range(int(152*1), int(189*1))))
+        # dataset_val = Subset(dataset_validate, list(range(int(184*1), int(230*1))))
+
+    print("Dataset train size: ", len(dataset_train))
+    print("Dataset val size: ", len(dataset_val))
 
     if True:  # args.distributed:
         num_tasks = misc.get_world_size()
@@ -307,8 +314,6 @@ def main(args):
     # print(optimizer)
     loss_scaler = NativeScaler()
 
-    # class_weights = 189.0 / (2.0 * torch.Tensor([88.0, 101.0])) # total_nb_samples / (nb_classes * samples_per_class)
-    class_weights = 230.0 / (2.0 * torch.Tensor([88.0, 142.0])) # total_nb_samples / (nb_classes * samples_per_class)
     class_weights = class_weights.to(device=device)
     criterion = torch.nn.CrossEntropyLoss(weight=class_weights)
 

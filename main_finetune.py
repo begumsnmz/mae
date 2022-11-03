@@ -129,8 +129,7 @@ def get_args_parser():
     # * Finetuning params
     parser.add_argument('--finetune', default='',
                         help='finetune from checkpoint')
-    parser.add_argument('--global_pool', action='store_true')
-    parser.set_defaults(global_pool=False)
+    parser.add_argument('--global_pool', action='store_true', default=False)
     parser.add_argument('--cls_token', action='store_false', dest='global_pool',
                         help='Use class token instead of global pool for classification')
 
@@ -160,10 +159,9 @@ def get_args_parser():
     parser.add_argument('--dist_eval', action='store_true', default=False,
                         help='Enabling distributed evaluation (recommended during training for faster monitor')
     parser.add_argument('--num_workers', default=10, type=int)
-    parser.add_argument('--pin_mem', action='store_true',
+    parser.add_argument('--pin_mem', action='store_true', default=True,
                         help='Pin CPU memory in DataLoader for more efficient (sometimes) transfer to GPU.')
     parser.add_argument('--no_pin_mem', action='store_false', dest='pin_mem')
-    parser.set_defaults(pin_mem=True)
 
     # distributed training parameters
     parser.add_argument('--world_size', default=1, type=int,
@@ -198,15 +196,20 @@ def main(args):
     dataset_validate = EEGDatasetFast(transform=True, augment=False, args=args)
 
     # dataloader (NOTE: adjust the class weights for the criterion below)
-    # dataset_train = Subset(dataset, list(range(int(0*1), int(114*1))))
-    dataset_train = Subset(dataset, list(range(int(0*1), int(138*1))))
+    class_weights = 189.0 / (2.0 * torch.Tensor([88.0, 101.0])) # total_nb_samples / (nb_classes * samples_per_class)
+    # class_weights = 230.0 / (2.0 * torch.Tensor([88.0, 142.0])) # total_nb_samples / (nb_classes * samples_per_class)
+    # ### THIS IS ONLY FOR SEED
+    # class_weights = 900.0 / (3.0 * torch.Tensor([293.0, 311.0, 296.0])) # total_nb_samples / (nb_classes * samples_per_class) 
+
+    dataset_train = Subset(dataset, list(range(int(0*1), int(114*1))))
+    # dataset_train = Subset(dataset, list(range(int(0*1), int(138*1))))
     # dataset_train = ConcatDataset([Subset(dataset, list(range(int(0*1), int(92*1)))), Subset(dataset, list(range(int(138*1), int(184*1))))])
     if args.eval == False:
-        # dataset_val = Subset(dataset_validate, list(range(int(114*1), int(152*1))))
-        dataset_val = Subset(dataset_validate, list(range(int(138*1), int(184*1))))
+        dataset_val = Subset(dataset_validate, list(range(int(114*1), int(152*1))))
+        # dataset_val = Subset(dataset_validate, list(range(int(138*1), int(184*1))))
     else:
-        # dataset_val = Subset(dataset_validate, list(range(int(152*1), int(189*1))))
-        dataset_val = Subset(dataset_validate, list(range(int(184*1), int(230*1))))
+        dataset_val = Subset(dataset_validate, list(range(int(152*1), int(189*1))))
+        # dataset_val = Subset(dataset_validate, list(range(int(184*1), int(230*1))))
 
     # ### THIS IS ONLY FOR SEED
     # dataset_train = Subset(dataset, list(range(0, 448)))
@@ -215,6 +218,9 @@ def main(args):
     #     dataset_val = Subset(dataset_validate, list(range(448, 559)))
     # else:
     #     dataset_val = Subset(dataset_validate, list(range(112, 559)))
+
+    print("Dataset train size: ", len(dataset_train))
+    print("Dataset val size: ", len(dataset_val))
 
     if True:  # args.distributed:
         num_tasks = misc.get_world_size()
@@ -340,10 +346,6 @@ def main(args):
     optimizer = torch.optim.AdamW(param_groups, lr=args.lr)
     loss_scaler = NativeScaler()
 
-    # class_weights = 189.0 / (2.0 * torch.Tensor([88.0, 101.0])) # total_nb_samples / (nb_classes * samples_per_class)
-    class_weights = 230.0 / (2.0 * torch.Tensor([88.0, 142.0])) # total_nb_samples / (nb_classes * samples_per_class)
-    # ################# THIS IS ONLY FOR SEED #################
-    # class_weights = 900.0 / (3.0 * torch.Tensor([293.0, 311.0, 296.0])) # total_nb_samples / (nb_classes * samples_per_class) 
     class_weights = class_weights.to(device=device)
     if mixup_fn is not None:
         # smoothing is handled with mixup label transform
@@ -390,6 +392,7 @@ def main(args):
         if log_writer is not None:
             log_writer.add_scalar('perf/test_acc1', test_stats['acc1'], epoch)
             #log_writer.add_scalar('perf/test_acc5', test_stats['acc5'], epoch)
+            log_writer.add_scalar('perf/test_acc', test_stats['acc'], epoch)
             log_writer.add_scalar('perf/test_f1', test_stats['f1'], epoch)
             log_writer.add_scalar('perf/test_auroc', test_stats['auroc'], epoch)
             log_writer.add_scalar('perf/test_loss', test_stats['loss'], epoch)
@@ -398,6 +401,7 @@ def main(args):
                 training_history = {'epoch' : epoch,
                                     'test_acc1' : test_stats['acc1'],
                                     #'test_acc5' : test_stats['acc5'],
+                                    'test_acc' : test_stats['acc'],
                                     'test_f1' : test_stats['f1'],
                                     'test_auroc' : test_stats['auroc'],
                                     'test_loss' : test_stats['loss']}
