@@ -118,7 +118,7 @@ class MaskedAutoencoderViT(nn.Module):
         w = x.shape[1]
         assert h * w == x.shape[1]
         
-        img_channels = x.shape[2] / (p*q)
+        img_channels = int(x.shape[2] / (p*q))
 
         x = x.reshape(shape=(x.shape[0], h, w, p, q, img_channels))
         x = torch.einsum('nhwpqc->nchpwq', x)
@@ -213,24 +213,51 @@ class MaskedAutoencoderViT(nn.Module):
             target = (target - mean) / (var + 1.e-6)**.5
 
         loss = (pred - target) ** 2
-        loss = loss.mean(dim=-1)  # [N, L], mean loss per patch
 
-        loss = (loss * mask).sum() / mask.sum()  # mean loss on removed patches
-        return loss
+        loss_patches = loss.mean(dim=-1)  # [N, L], mean loss per patch
+        loss_patches = (loss_patches * mask).sum() / mask.sum()  # mean loss on removed patches
+
+        # return loss_patches
+
+        # # REGULARIZATION (using masked patches)
+        # loss_reg = loss.mean(dim=-1)  # [N, L], mean loss per patch
+        # loss_reg = (loss_reg * mask).sum() / mask.sum()  # mean loss on removed patches
+        # reg_weight = 0.25
+
+        # # REGULARIZATION (using amplitude of the signal)
+        # pred_min = pred.min(dim=-1, keepdim=True)[0]
+        # pred_max = pred.max(dim=-1, keepdim=True)[0]
+        # target_min = target.min(dim=-1, keepdim=True)[0]
+        # target_max = target.max(dim=-1, keepdim=True)[0]
+
+        # loss_reg = (pred_min-target_min)**2 + (pred_max-target_max)**2 # penalizing difference in amplitude
+        # loss_reg = loss_reg.mean()
+        reg_weight = 0.10
+
+        loss = loss.mean()
+
+        return (1-reg_weight)*loss + reg_weight*loss_patches
 
     def forward(self, imgs, mask_ratio=0.75):
         latent, mask, ids_restore = self.forward_encoder(imgs, mask_ratio)
         pred = self.forward_decoder(latent, ids_restore)  # [N, L, p*q*5]
         loss = self.forward_loss(imgs, pred, mask)
-        return loss, pred, mask
+
+        orig_patched = self.patchify(imgs)
+        orig_masked_unpatched = self.unpatchify(orig_patched*mask.unsqueeze(dim=-1))
+        imgs_hat = self.unpatchify(pred)
+        imgs_hat_masked = self.unpatchify(pred*mask.unsqueeze(dim=-1))
+
+        return loss, imgs_hat, imgs_hat_masked
 
 
 def mae_vit_small_patchX_dec384d6b(**kwargs):
     model = MaskedAutoencoderViT(
-        embed_dim=512, depth=8, num_heads=8,
-        decoder_embed_dim=384, decoder_depth=6, decoder_num_heads=12,
+        embed_dim=512, depth=4, num_heads=8,
+        decoder_embed_dim=384, decoder_depth=4, decoder_num_heads=4,
         mlp_ratio=4, norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
     return model
+
 
 def mae_vit_base_patch200_dec512d8b(**kwargs):
     model = MaskedAutoencoderViT(
@@ -267,6 +294,7 @@ def mae_vit_base_patch10_dec512d8b(**kwargs):
         mlp_ratio=4, norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
     return model
 
+
 def mae_vit_large_patch224_dec512d8b(**kwargs):
     model = MaskedAutoencoderViT(
         patch_size=(65, 224), embed_dim=1024, depth=24, num_heads=16,
@@ -280,6 +308,7 @@ def mae_vit_large_patchX_dec512d8b(**kwargs):
         decoder_embed_dim=512, decoder_depth=8, decoder_num_heads=16,
         mlp_ratio=4, norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
     return model
+
 
 def mae_vit_huge_patch112_dec512d8b(**kwargs):
     model = MaskedAutoencoderViT(

@@ -140,6 +140,7 @@ def evaluate(data_loader, model, device):
 
     # switch to evaluation mode
     model.eval()
+    metric_acc = torchmetrics.Accuracy(num_classes=2, threshold=0.5, average='macro').to(device=device)
     metric_f1 = torchmetrics.F1Score(num_classes=2, threshold=0.5, average='macro').to(device=device)
     metric_auroc = torchmetrics.AUROC(num_classes=2, pos_label=0, average='macro').to(device=device)
     # #### THIS IS ONLY FOR SEED ####
@@ -160,6 +161,7 @@ def evaluate(data_loader, model, device):
         print("Output: ", [i.item() for i in torch.argmax(output, dim=1)])
 
         acc1, acc5 = accuracy(output, target, topk=(1, 5))
+        acc = metric_acc(output, target)
         f1 = metric_f1(output, target)
         auroc = metric_auroc(output, target)
 
@@ -167,9 +169,12 @@ def evaluate(data_loader, model, device):
         metric_logger.update(loss=loss.item())
         metric_logger.meters['acc1'].update(acc1.item(), n=batch_size)
         metric_logger.meters['acc5'].update(acc5.item(), n=batch_size)
+        metric_logger.meters['acc'].update(100*acc.item(), n=batch_size)
         metric_logger.meters['f1'].update(100*f1.item(), n=batch_size)
         metric_logger.meters['auroc'].update(100*auroc.item(), n=batch_size)
 
+    acc = 100*metric_acc.compute()
+    metric_acc.reset()
     f1 = 100*metric_f1.compute() # returns the f1 score for class 0
     metric_f1.reset()
     auroc = 100*metric_auroc.compute() # returns the auroc for both classes combined (see average="macro")
