@@ -1,6 +1,8 @@
 import os
 from typing import Any, Tuple
 
+import math
+
 import torch
 from torch.utils.data import Dataset
 from torchvision import transforms
@@ -33,16 +35,20 @@ class EEGDatasetFast(Dataset):
             data = data.unsqueeze(dim=0)
 
         data = data[:, :self.args.input_electrodes, :]
-
+        
         if self.transform == True:
             transform = transforms.Compose([CropResizing(fixed_len=self.args.input_size[-1], start_idx=3000)])
             data = transform(data)
 
         if self.augment == True:
-            augment = transforms.Compose([Jitter(),
-                                          Rescaling(),
+            augment = transforms.Compose([Jitter(sigma=0.03),
+                                          Rescaling(sigma=0.03),
                                           CropResizing(fixed_len=self.args.input_size[-1])])
-
             data = augment(data)
+
+        # label = self.labels[idx]
+        # data = torch.sin(math.pi*torch.linspace(0, 4, self.args.input_size[-1])).unsqueeze(dim=0).repeat(65, 1).unsqueeze(dim=0) \
+        #         + torch.sin(math.pi*torch.linspace(0, 8, self.args.input_size[-1])).unsqueeze(dim=0).repeat(65, 1).unsqueeze(dim=0) \
+        #         + torch.sin(math.pi*torch.linspace(0, 16, self.args.input_size[-1])).unsqueeze(dim=0).repeat(65, 1).unsqueeze(dim=0)
 
         return data, label.type(torch.LongTensor).argmax(dim=-1)

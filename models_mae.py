@@ -222,21 +222,36 @@ class MaskedAutoencoderViT(nn.Module):
         # # REGULARIZATION (using masked patches)
         # loss_reg = loss.mean(dim=-1)  # [N, L], mean loss per patch
         # loss_reg = (loss_reg * mask).sum() / mask.sum()  # mean loss on removed patches
-        # reg_weight = 0.25
 
-        # # REGULARIZATION (using amplitude of the signal)
-        # pred_min = pred.min(dim=-1, keepdim=True)[0]
-        # pred_max = pred.max(dim=-1, keepdim=True)[0]
-        # target_min = target.min(dim=-1, keepdim=True)[0]
-        # target_max = target.max(dim=-1, keepdim=True)[0]
+        # # REGULARIZATION (using amplitude of the actual signal)
+        # imgs_hat = self.unpatchify(pred)
 
-        # loss_reg = (pred_min-target_min)**2 + (pred_max-target_max)**2 # penalizing difference in amplitude
+        # imgs_hat_min = imgs_hat.min(dim=-1, keepdim=True)[0]
+        # imgs_hat_max = imgs_hat.max(dim=-1, keepdim=True)[0]
+        # imgs_min = imgs.min(dim=-1, keepdim=True)[0]
+        # imgs_max = imgs.max(dim=-1, keepdim=True)[0]
+
+        # loss_reg = (imgs_hat_min-imgs_min)**2 + (imgs_hat_max-imgs_max)**2 # penalizing difference in amplitude
         # loss_reg = loss_reg.mean()
-        reg_weight = 0.10
 
+        # REGULARIZATION (using normalized correlation coefficient of the actual signals)
+        imgs_hat = self.unpatchify(pred)
+        target_normalized = (imgs - imgs.mean(dim=-1, keepdim=True)) / (imgs.var(dim=-1, keepdim=True) + 1e-12)**0.5
+        pred_normalized = (imgs_hat - imgs_hat.var(dim=-1, keepdim=True)) / (imgs_hat.var(dim=-1, keepdim=True) + 1e-12)**0.5
+
+        nb_of_signals = 1
+        for dim in range(imgs.dim()-1): # all but the last dimension (which is the actual signal)
+            nb_of_signals = nb_of_signals * imgs.shape[dim]
+
+        cross_corrs = (1.0 / (imgs.shape[-1]-1)) * torch.sum(target_normalized * pred_normalized, dim=-1)
+        ncc = cross_corrs.sum() / nb_of_signals
+
+        reg_weight = 0.10
         loss = loss.mean()
 
-        return (1-reg_weight)*loss + reg_weight*loss_patches
+        return (1-reg_weight)*loss_patches + reg_weight*(1-ncc)
+        # return (1-reg_weight)*loss + reg_weight*loss_patches
+
 
     def forward(self, imgs, mask_ratio=0.75):
         latent, mask, ids_restore = self.forward_encoder(imgs, mask_ratio)

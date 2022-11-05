@@ -39,7 +39,7 @@ from util.misc import NativeScalerWithGradNormCount as NativeScaler
 
 import models_mae
 
-from engine_pretrain import train_one_epoch
+from engine_pretrain import train_one_epoch, evaluate
 
 from util.dataset import EEGDatasetFast
 
@@ -75,9 +75,8 @@ def get_args_parser():
     parser.add_argument('--mask_ratio', default=0.75, type=float,
                         help='Masking ratio (percentage of removed patches).')
 
-    parser.add_argument('--norm_pix_loss', action='store_true',
+    parser.add_argument('--norm_pix_loss', action='store_true', default=False,
                         help='Use (per-patch) normalized pixels as targets for computing loss')
-    parser.set_defaults(norm_pix_loss=False)
 
     # Optimizer parameters
     parser.add_argument('--weight_decay', type=float, default=0.05,
@@ -99,7 +98,7 @@ def get_args_parser():
     parser.add_argument('--labels_path', default='labels_2classes_8fold_decomposed_2d_fs200.pt', type=str,
                         help='labels path')
 
-    parser.add_argument('--output_dir', default='./output_dir',
+    parser.add_argument('--output_dir', default='',
                         help='path where to save, empty for no saving')
     parser.add_argument('--log_dir', default='./output_dir',
                         help='path where to tensorboard log')
@@ -113,10 +112,9 @@ def get_args_parser():
     parser.add_argument('--start_epoch', default=0, type=int, metavar='N',
                         help='start epoch')
     parser.add_argument('--num_workers', default=32, type=int)
-    parser.add_argument('--pin_mem', action='store_true',
+    parser.add_argument('--pin_mem', action='store_true', default=True,
                         help='Pin CPU memory in DataLoader for more efficient (sometimes) transfer to GPU.')
     parser.add_argument('--no_pin_mem', action='store_false', dest='pin_mem')
-    parser.set_defaults(pin_mem=True)
 
     # distributed training parameters
     parser.add_argument('--world_size', default=1, type=int,
@@ -163,8 +161,8 @@ def main(args):
 
     # load data
     dataset_mri = EEGDatasetFast(augment=True, args=args)
-    # dataset_mri_train = Subset(dataset_mri, list(range(int(0*1), int(114*1))))
-    dataset_mri_train = Subset(dataset_mri, list(range(int(0*1), int(138*1))))
+    dataset_mri_train = Subset(dataset_mri, list(range(int(0*1), int(114*1))))
+    # dataset_mri_train = Subset(dataset_mri, list(range(int(0*1), int(138*1))))
 
     if args.transfer_learning == True:
         # GENERAL
@@ -200,6 +198,10 @@ def main(args):
     else:
         dataset_train = dataset_mri_train
     
+    dataset_mri_validate = EEGDatasetFast(transform=True, augment=False, args=args)
+    dataset_val = Subset(dataset_mri_validate, list(range(int(114*1), int(152*1))))
+    # dataset_val = Subset(dataset_mri, list(range(int(138*1), int(184*1))))
+
     print("Dataset size: ", len(dataset_train))
 
     if True:  # args.distributed:
@@ -209,6 +211,7 @@ def main(args):
             dataset_train, num_replicas=num_tasks, rank=global_rank, shuffle=True
         )
         print("Sampler_train = %s" % str(sampler_train))
+        sampler_val = torch.utils.data.SequentialSampler(dataset_val)
     else:
         sampler_train = torch.utils.data.RandomSampler(dataset_train)
 
@@ -226,6 +229,16 @@ def main(args):
         dataset_train, 
         sampler=sampler_train,
         # shuffle=True,
+        batch_size=args.batch_size,
+        num_workers=args.num_workers,
+        pin_memory=args.pin_mem,
+        drop_last=False,
+    )
+
+    data_loader_val = torch.utils.data.DataLoader(
+        dataset_val, 
+        sampler=sampler_val,
+        # shuffle=False,
         batch_size=args.batch_size,
         num_workers=args.num_workers,
         pin_memory=args.pin_mem,
@@ -272,9 +285,9 @@ def main(args):
     print(f"Start training for {args.epochs} epochs")
     start_time = time.time()
     for epoch in range(args.start_epoch, args.epochs):
-        if args.distributed:
+        if True: #args.distributed:
             data_loader_train.sampler.set_epoch(epoch)
-        train_stats = train_one_epoch(
+        train_stats, training_history = train_one_epoch(
             model, data_loader_train,
             optimizer, device, epoch, loss_scaler,
             log_writer=log_writer,
@@ -284,6 +297,9 @@ def main(args):
             misc.save_model(
                 args=args, model=model, model_without_ddp=model_without_ddp, optimizer=optimizer,
                 loss_scaler=loss_scaler, epoch=epoch)
+
+        val_stats = evaluate(data_loader_val, model, device, epoch, log_writer=log_writer, training_history=training_history, args=args)
+        print(f"Loss / Normalized CC of the network on the {len(dataset_val)} val images: {val_stats['loss']:.4f} / {val_stats['ncc']:.2f}")
 
         log_stats = {**{f'train_{k}': v for k, v in train_stats.items()},
                         'epoch': epoch,}

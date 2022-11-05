@@ -4,7 +4,7 @@
 # HYPERPARAMETERS
 batch_size="32"
 accum_iter="1"
-blr="3e-4"
+blr="1e-3"
 
 # FIXED PARAMETERS
 epochs="50"
@@ -35,7 +35,7 @@ pre_batch_size=(32)
 pre_blr=(1e-2)
 
 folder="noExternal"
-subfolder="decomposed_t20000_p10_m0.4"
+subfolder="decomposed_t20000_p10_m0.4_augm"
 
 eval="True"
 
@@ -50,7 +50,7 @@ do
         finetune="/home/oturgut/PyTorchEEG/mae_he/mae/output/pre/"$folder"/"$subfolder"/pre_"$pre_data"/checkpoint-249.pth"
         cmd="python3 main_finetune.py --input_channels $input_channels --input_electrodes $input_electrodes --time_steps $time_steps --patch_height $patch_height --patch_width $patch_width --model $model --batch_size $batch_size --epochs $epochs --accum_iter $accum_iter --drop_path $drop_path --weight_decay $weight_decay --layer_decay $layer_decay --blr $blr --warmup_epoch $warmup_epochs --smoothing $smoothing --finetune $finetune --data_path $data_path --labels_path $labels_path --nb_classes $nb_classes --output_dir $output_dir --log_dir $log_dir --num_workers $num_workers"
     else
-        resume="/home/oturgut/PyTorchEEG/mae_he/mae/output/fin/"$folder"/"$subfolder"/zero_fin_b"$batch_size"_blr"$blr"_"$pre_data"/checkpoint-33.pth"
+        resume="/home/oturgut/PyTorchEEG/mae_he/mae/output/fin/"$folder"/"$subfolder"/fin_b"$batch_size"_blr"$blr"_"$pre_data"/checkpoint-2.pth"
         cmd="python3 main_finetune.py --eval --resume $resume --input_channels $input_channels --input_electrodes $input_electrodes --time_steps $time_steps --patch_height $patch_height --patch_width $patch_width --model $model --batch_size $batch_size --epochs $epochs --accum_iter $accum_iter --drop_path $drop_path --weight_decay $weight_decay --layer_decay $layer_decay --blr $blr --warmup_epoch $warmup_epochs --smoothing $smoothing --data_path $data_path --labels_path $labels_path --nb_classes $nb_classes --log_dir $log_dir --num_workers $num_workers"
     fi
     

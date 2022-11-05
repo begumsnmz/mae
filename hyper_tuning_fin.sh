@@ -40,7 +40,7 @@ pre_batch_size=(32)
 pre_blr=(1e-2)
 
 folder="noExternal"
-subfolder=("decomposed_t20000_p10_m0.4")
+subfolder=("decomposed_t20000_p10_m0.75_augm_ncc")
 
 output="True"
 
@@ -52,14 +52,14 @@ do
         do
 
             pre_data=$folder"_b"$pre_bs"_blr"$pre_lr
-            finetune="/home/oturgut/PyTorchEEG/mae_he/mae/output/pre/"$folder"/"$subf"/pre_"$pre_data"/checkpoint-0.pth"
+            finetune="/home/oturgut/PyTorchEEG/mae_he/mae/output/pre/"$folder"/"$subf"/pre_"$pre_data"/checkpoint-399.pth"
 
             for bs in "${batch_size[@]}"
             do
                 for lr in "${blr[@]}"
                 do
-                    output_dir="./output/fin/"$folder"/"$subf"/test_fin_b"$bs"_blr"$lr"_"$pre_data
-                    log_dir="./logs/fin/"$folder"/"$subf"/test_fin_b"$bs"_blr"$lr"_"$pre_data
+                    output_dir="./output/fin/"$folder"/"$subf"/fin_b"$bs"_blr"$lr"_"$pre_data
+                    log_dir="./logs/fin/"$folder"/"$subf"/fin_b"$bs"_blr"$lr"_"$pre_data
 
                     # resume="/home/oturgut/PyTorchEEG/mae_he/mae/output/fin/"$folder"/"$subfolder"/fin_b"$bs"_blr"$lr"_"$pre_data"/checkpoint-32.pth"
                 
