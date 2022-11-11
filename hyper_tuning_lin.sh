@@ -2,7 +2,7 @@
 # hyperparameter tuning for linear probing
 
 # HYPERPARAMETERS
-batch_size=(8)
+batch_size=(64)
 accum_iter=(1)
 blr=(1e-3)
 
@@ -13,27 +13,27 @@ warmup_epochs="10"
 input_channels="5"
 input_electrodes="65"
 time_steps="37000"
-model="vit_base_patchX"
+model="vit_small_patchX"
 
 patch_height=$input_electrodes
-patch_width="200"
+patch_width="50"
 
 weight_decay="0"
 
-data_path="/home/oturgut/PyTorchEEG/data/preprocessed/data_TARGET_10fold_decomposed_ideal_fs200.pt"
-labels_path="/home/oturgut/PyTorchEEG/data/preprocessed/labels_2classes_TARGET_10fold_fs200.pt"
+data_path="/home/oturgut/PyTorchEEG/data/preprocessed/data_DINH_10fold_normalized_decomposed_fs200.pt"
+labels_path="/home/oturgut/PyTorchEEG/data/preprocessed/labels_2classes_DINH_10fold_fs200.pt"
 nb_classes="2"
 
 global_pool="False"
 num_workers="32"
 
-pre_batch_size=(384)
-pre_blr=(1e-5)
+pre_batch_size=(32)
+pre_blr=(1e-2)
 
-folder="seed"
-subfolder=("0.6train/10fold/decomposed")
+folder="noExternal"
+subfolder=("decomposed/t37000/p50/m0.4/ncc")
 
-output="False"
+output="True"
 
 for pre_bs in "${pre_batch_size[@]}"
 do
@@ -43,7 +43,7 @@ do
         do
 
             pre_data=$folder"_b"$pre_bs"_blr"$pre_lr
-            finetune="/home/oturgut/PyTorchEEG/mae_he/mae/output/pre/"$folder"/"$subf"/pre_"$pre_data"/checkpoint-249.pth"
+            finetune="/home/oturgut/PyTorchEEG/mae_he/mae/output/pre/"$folder"/"$subf"/pre_"$pre_data"/checkpoint-340.pth"
         
             for bs in "${batch_size[@]}"
             do

@@ -174,12 +174,10 @@ def main(args):
     dataset = EEGDatasetFast(augment=True, args=args)
     dataset_validate = EEGDatasetFast(transform=True, augment=False, args=args)
 
-    # dataloader (NOTE: adjust the class weights for the criterion below)
-    class_weights = 189.0 / (2.0 * torch.Tensor([88.0, 101.0])) # total_nb_samples / (nb_classes * samples_per_class)
-    # class_weights = 230.0 / (2.0 * torch.Tensor([88.0, 142.0])) # total_nb_samples / (nb_classes * samples_per_class)
-    
     dataset_train = Subset(dataset, list(range(int(0*1), int(114*1))))
+    class_weights = 189.0 / (2.0 * torch.Tensor([88.0, 101.0])) # total_nb_samples / (nb_classes * samples_per_class)
     # dataset_train = Subset(dataset, list(range(int(0*1), int(138*1))))
+    # class_weights = 230.0 / (2.0 * torch.Tensor([88.0, 142.0])) # total_nb_samples / (nb_classes * samples_per_class)
     if args.eval == False:
         dataset_val = Subset(dataset_validate, list(range(int(114*1), int(152*1))))
         # dataset_val = Subset(dataset_validate, list(range(int(138*1), int(184*1))))
@@ -288,7 +286,7 @@ def main(args):
     n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
 
     print("Model = %s" % str(model_without_ddp))
-    print('Number of params (M): %.2f' % (n_parameters / 1.e6))
+    print('Number of params (K): %.2f' % (n_parameters / 1.e3))
 
     eff_batch_size = args.batch_size * args.accum_iter * misc.get_world_size()
     
@@ -354,6 +352,7 @@ def main(args):
         if log_writer is not None:
             log_writer.add_scalar('perf/test_acc1', test_stats['acc1'], epoch)
             #log_writer.add_scalar('perf/test_acc5', test_stats['acc5'], epoch)
+            log_writer.add_scalar('perf/test_acc', test_stats['acc'], epoch)
             log_writer.add_scalar('perf/test_f1', test_stats['f1'], epoch)
             log_writer.add_scalar('perf/test_auroc', test_stats['auroc'], epoch)
             log_writer.add_scalar('perf/test_loss', test_stats['loss'], epoch)
@@ -362,6 +361,7 @@ def main(args):
                 training_history = {'epoch' : epoch,
                                     'test_acc1' : test_stats['acc1'],
                                     #'test_acc5' : test_stats['acc5'],
+                                    'test_acc' : test_stats['acc'],
                                     'test_f1' : test_stats['f1'],
                                     'test_auroc' : test_stats['auroc'],
                                     'test_loss' : test_stats['loss']}

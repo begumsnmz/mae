@@ -60,6 +60,13 @@ def vit_small_patchX(**kwargs):
     return model
 
 
+def vit_medium_patchX(**kwargs):
+    model = VisionTransformer(
+        embed_dim=680, depth=6, num_heads=8, mlp_ratio=4, qkv_bias=True,
+        norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
+    return model
+
+
 def vit_base_patch200(**kwargs):
     model = VisionTransformer(
         patch_size=(65, 200), embed_dim=768, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,

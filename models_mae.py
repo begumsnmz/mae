@@ -217,7 +217,7 @@ class MaskedAutoencoderViT(nn.Module):
         loss_patches = loss.mean(dim=-1)  # [N, L], mean loss per patch
         loss_patches = (loss_patches * mask).sum() / mask.sum()  # mean loss on removed patches
 
-        # return loss_patches
+        return loss_patches
 
         # # REGULARIZATION (using masked patches)
         # loss_reg = loss.mean(dim=-1)  # [N, L], mean loss per patch
@@ -249,8 +249,8 @@ class MaskedAutoencoderViT(nn.Module):
         reg_weight = 0.10
         loss = loss.mean()
 
-        return (1-reg_weight)*loss_patches + reg_weight*(1-ncc)
-        # return (1-reg_weight)*loss + reg_weight*loss_patches
+        # return (1-reg_weight)*loss_patches + reg_weight*(1-ncc)
+        return (1-reg_weight)*loss + reg_weight*(1-ncc)
 
 
     def forward(self, imgs, mask_ratio=0.75):
@@ -269,6 +269,14 @@ class MaskedAutoencoderViT(nn.Module):
 def mae_vit_small_patchX_dec384d6b(**kwargs):
     model = MaskedAutoencoderViT(
         embed_dim=512, depth=4, num_heads=8,
+        decoder_embed_dim=384, decoder_depth=4, decoder_num_heads=4,
+        mlp_ratio=4, norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
+    return model
+
+
+def mae_vit_medium_patchX_dec384d6b(**kwargs):
+    model = MaskedAutoencoderViT(
+        embed_dim=640, depth=6, num_heads=8,
         decoder_embed_dim=384, decoder_depth=4, decoder_num_heads=4,
         mlp_ratio=4, norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
     return model
@@ -342,6 +350,8 @@ def mae_vit_huge_patchX_dec512d8b(**kwargs):
 
 # set recommended archs
 mae_vit_small_patchX = mae_vit_small_patchX_dec384d6b  # decoder: 512 dim, 8 blocks
+
+mae_vit_medium_patchX = mae_vit_medium_patchX_dec384d6b  # decoder: 512 dim, 8 blocks
 
 mae_vit_base_patch200 = mae_vit_base_patch200_dec512d8b  # decoder: 512 dim, 8 blocks
 mae_vit_base_patch100 = mae_vit_base_patch100_dec512d8b  # decoder: 512 dim, 8 blocks

@@ -2,9 +2,9 @@
 # hyperparameter tuning for finetuning
 
 # HYPERPARAMETERS
-batch_size=(32)
+batch_size=(16)
 accum_iter=(1)
-blr=(3e-4)
+blr=(1e-2)
 
 # FIXED PARAMETERS
 epochs="50"
@@ -12,20 +12,20 @@ warmup_epochs="5"
 
 input_channels="5"
 input_electrodes="65"
-time_steps="20000"
-model="vit_small_patchX"
+time_steps="37000"
+model="vit_base_patchX"
 drop_path="0.1"
 
 patch_height=$input_electrodes
-patch_width="10"
+patch_width="200"
 
 weight_decay="0.05"
 layer_decay="0.75"
 
 smoothing="0.1" # label smoothing; changes the optimizer used
 
-data_path="/home/oturgut/PyTorchEEG/data/test/data_DINH_10fold_normalized_decomposed_fs200.pt"
-labels_path="/home/oturgut/PyTorchEEG/data/raw/labels_2classes_DINH_10fold_fs200.pt"
+data_path="/home/oturgut/PyTorchEEG/data/preprocessed/data_DINH_10fold_normalized_decomposed_fs200.pt"
+labels_path="/home/oturgut/PyTorchEEG/data/preprocessed/labels_2classes_DINH_10fold_fs200.pt"
 nb_classes="2"
 
 # #### THIS IS ONLY FOR SEED
@@ -36,11 +36,12 @@ nb_classes="2"
 global_pool="False"
 num_workers="32"
 
-pre_batch_size=(32)
-pre_blr=(1e-2)
+pre_batch_size=(128)
+pre_blr=(1e-5)
 
 folder="noExternal"
-subfolder=("decomposed_t20000_p10_m0.75_augm_ncc")
+subfolder=("dinh")
+# subfolder=("decomposed/t1000/p10/m0.4/normPixLoss/ncc")
 
 output="True"
 
@@ -52,7 +53,7 @@ do
         do
 
             pre_data=$folder"_b"$pre_bs"_blr"$pre_lr
-            finetune="/home/oturgut/PyTorchEEG/mae_he/mae/output/pre/"$folder"/"$subf"/pre_"$pre_data"/checkpoint-399.pth"
+            finetune="/home/oturgut/PyTorchEEG/mae_he/mae/output/pre/"$folder"/"$subf"/pre_"$pre_data"/checkpoint-249.pth"
 
             for bs in "${batch_size[@]}"
             do

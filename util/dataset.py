@@ -13,15 +13,19 @@ from util.augmentations import Jitter, Masking, Rescaling, Permutation, Shift, T
 
 class EEGDatasetFast(Dataset):
     """Fast EEGDataset (fetching prepared data and labels from files)"""
-    def __init__(self, transform=False, augment=False, args=None) -> None:
+    def __init__(self, transform=False, augment=False, transfer=False, args=None) -> None:
         """load data and labels from files"""
         self.transform = transform
         self.augment = augment
         
         self.args = args
 
-        self.data = torch.load(args.data_path, map_location=torch.device('cpu')) # load to ram
-        self.labels = torch.load(args.labels_path, map_location=torch.device('cpu')) # load to ram
+        if transfer == False:
+            self.data = torch.load(args.data_path, map_location=torch.device('cpu')) # load to ram
+            self.labels = torch.load(args.labels_path, map_location=torch.device('cpu')) # load to ram
+        else:
+            self.data = torch.load(args.transfer_data_path, map_location=torch.device('cpu')) # load to ram
+            self.labels = torch.load(args.transfer_labels_path, map_location=torch.device('cpu')) # load to ram
 
     def __len__(self) -> int:
         """return the number of samples in the dataset"""
@@ -41,8 +45,8 @@ class EEGDatasetFast(Dataset):
             data = transform(data)
 
         if self.augment == True:
-            augment = transforms.Compose([Jitter(sigma=0.03),
-                                          Rescaling(sigma=0.03),
+            augment = transforms.Compose([#Jitter(sigma=0.03),
+                                          #Rescaling(sigma=0.03),
                                           CropResizing(fixed_len=self.args.input_size[-1])])
             data = augment(data)
 

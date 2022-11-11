@@ -195,14 +195,13 @@ def main(args):
     dataset = EEGDatasetFast(augment=True, args=args)
     dataset_validate = EEGDatasetFast(transform=True, augment=False, args=args)
 
-    # dataloader (NOTE: adjust the class weights for the criterion below)
-    class_weights = 189.0 / (2.0 * torch.Tensor([88.0, 101.0])) # total_nb_samples / (nb_classes * samples_per_class)
-    # class_weights = 230.0 / (2.0 * torch.Tensor([88.0, 142.0])) # total_nb_samples / (nb_classes * samples_per_class)
     # ### THIS IS ONLY FOR SEED
     # class_weights = 900.0 / (3.0 * torch.Tensor([293.0, 311.0, 296.0])) # total_nb_samples / (nb_classes * samples_per_class) 
 
     dataset_train = Subset(dataset, list(range(int(0*1), int(114*1))))
+    class_weights = 189.0 / (2.0 * torch.Tensor([88.0, 101.0])) # total_nb_samples / (nb_classes * samples_per_class)
     # dataset_train = Subset(dataset, list(range(int(0*1), int(138*1))))
+    # class_weights = 230.0 / (2.0 * torch.Tensor([88.0, 142.0])) # total_nb_samples / (nb_classes * samples_per_class)
     # dataset_train = ConcatDataset([Subset(dataset, list(range(int(0*1), int(92*1)))), Subset(dataset, list(range(int(138*1), int(184*1))))])
     if args.eval == False:
         dataset_val = Subset(dataset_validate, list(range(int(114*1), int(152*1))))

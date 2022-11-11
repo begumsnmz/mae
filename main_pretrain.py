@@ -151,14 +151,6 @@ def main(args):
 
     cudnn.benchmark = True
 
-    # simple augmentation
-    # transform_train = transforms.Compose([
-    #         transforms.RandomResizedCrop(args.input_size, scale=(0.2, 1.0), interpolation=3),  # 3 is bicubic
-    #         transforms.RandomHorizontalFlip(),
-    #         transforms.ToTensor(),
-    #         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])])
-    # dataset_train = datasets.ImageFolder(os.path.join(args.data_path, 'train'), transform=transform_train)
-
     # load data
     dataset_mri = EEGDatasetFast(augment=True, args=args)
     dataset_mri_train = Subset(dataset_mri, list(range(int(0*1), int(114*1))))
@@ -166,9 +158,8 @@ def main(args):
 
     if args.transfer_learning == True:
         # GENERAL
-        args.data_path = args.transfer_data_path
-        args.labels_path = args.transfer_labels_path
-        dataset_external = EEGDatasetFast(augment=True, args=args)
+        dataset_external = EEGDatasetFast(augment=True, transfer=True, args=args)
+        # dataset_external_sub = Subset(dataset_external, list(range(0, 2)))
         dataset_train = ConcatDataset([dataset_mri_train, dataset_external])
 
         # # SEED
@@ -293,7 +284,7 @@ def main(args):
             log_writer=log_writer,
             args=args
         )
-        if args.output_dir and (epoch % 20 == 0 or epoch + 1 == args.epochs):
+        if args.output_dir and (epoch % 100 == 0 or epoch + 1 == args.epochs):
             misc.save_model(
                 args=args, model=model, model_without_ddp=model_without_ddp, optimizer=optimizer,
                 loss_scaler=loss_scaler, epoch=epoch)
