@@ -217,7 +217,7 @@ class MaskedAutoencoderViT(nn.Module):
         loss_patches = loss.mean(dim=-1)  # [N, L], mean loss per patch
         loss_patches = (loss_patches * mask).sum() / mask.sum()  # mean loss on removed patches
 
-        return loss_patches
+        # return loss_patches
 
         # # REGULARIZATION (using masked patches)
         # loss_reg = loss.mean(dim=-1)  # [N, L], mean loss per patch
