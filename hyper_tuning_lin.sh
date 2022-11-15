@@ -2,38 +2,38 @@
 # hyperparameter tuning for linear probing
 
 # HYPERPARAMETERS
-batch_size=(64)
+batch_size=(32)
 accum_iter=(1)
-blr=(1e-3)
+blr=(1e-1)
 
 # FIXED PARAMETERS
-epochs="90"
-warmup_epochs="10"
+epochs="75"
+warmup_epochs="8"
 
 input_channels="5"
 input_electrodes="65"
 time_steps="37000"
-model="vit_small_patchX"
+model="vit_medium_patchX"
 
-patch_height=$input_electrodes
+patch_height="65"
 patch_width="50"
 
 weight_decay="0"
 
-data_path="/home/oturgut/PyTorchEEG/data/preprocessed/data_DINH_10fold_normalized_decomposed_fs200.pt"
-labels_path="/home/oturgut/PyTorchEEG/data/preprocessed/labels_2classes_DINH_10fold_fs200.pt"
+data_path="/home/oturgut/PyTorchEEG/data/preprocessed/data_DINH_bw_10fold_normalized_sw_decomposed_fs200.pt"
+labels_path="/home/oturgut/PyTorchEEG/data/preprocessed/labels_2classes_DINH_bw_10fold_sw_fs200.pt"
 nb_classes="2"
 
 global_pool="False"
 num_workers="32"
 
-pre_batch_size=(32)
+pre_batch_size=(128)
 pre_blr=(1e-2)
 
-folder="noExternal"
-subfolder=("decomposed/t37000/p50/m0.4/ncc")
+folder="seed"
+subfolder=("decomposed/t37000/p50/m0.75/ncc")
 
-output="True"
+output="False"
 
 for pre_bs in "${pre_batch_size[@]}"
 do
@@ -43,14 +43,14 @@ do
         do
 
             pre_data=$folder"_b"$pre_bs"_blr"$pre_lr
-            finetune="/home/oturgut/PyTorchEEG/mae_he/mae/output/pre/"$folder"/"$subf"/pre_"$pre_data"/checkpoint-340.pth"
+            finetune="/home/oturgut/PyTorchEEG/mae_he/mae/output/pre/"$folder"/"$subf"/pre_"$pre_data"/checkpoint-249.pth"
         
             for bs in "${batch_size[@]}"
             do
                 for lr in "${blr[@]}"
                 do
-                    output_dir="./output/lin/"$folder"/"$subf"/lin_b"$bs"_blr"$lr"_"$pre_data
-                    log_dir="./logs/lin/"$folder"/"$subf"/lin_b"$bs"_blr"$lr"_"$pre_data
+                    output_dir="./output/lin/"$folder"/"$subf"/bw_sw_lin_b"$bs"_blr"$lr"_"$pre_data
+                    log_dir="./logs/lin/"$folder"/"$subf"/bw_sw_lin_b"$bs"_blr"$lr"_"$pre_data
                 
                     # resume="/home/oturgut/PyTorchEEG/mae_he/mae/output/lin/"$folder"/"$subfolder"/lin_b"$bs"_blr"$lr"_"$pre_data"/checkpoint-18.pth"
                 
