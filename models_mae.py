@@ -16,7 +16,7 @@ import torch.nn as nn
 
 from timm.models.vision_transformer import PatchEmbed, Block
 
-from util.pos_embed import get_1d_sincos_pos_embed
+from util.pos_embed import get_1d_sincos_pos_embed, get_2d_sincos_pos_embed
 
 
 class MaskedAutoencoderViT(nn.Module):
@@ -52,8 +52,7 @@ class MaskedAutoencoderViT(nn.Module):
 
         self.decoder_blocks = nn.ModuleList([
             Block(decoder_embed_dim, decoder_num_heads, mlp_ratio, qkv_bias=True, act_layer=nn.GELU, norm_layer=norm_layer)
-            for i in range(decoder_depth-1+1)])
-            # + [Block(decoder_embed_dim, decoder_num_heads, mlp_ratio, qkv_bias=True, act_layer=nn.Tanh, norm_layer=norm_layer)])
+            for i in range(decoder_depth)])
 
         self.decoder_norm = norm_layer(decoder_embed_dim)
         self.decoder_pred = nn.Linear(decoder_embed_dim, patch_size[0] * patch_size[1] * img_size[0], bias=True) # decoder to patch
@@ -66,10 +65,10 @@ class MaskedAutoencoderViT(nn.Module):
     def initialize_weights(self):
         # initialization
         # initialize (and freeze) pos_embed by sin-cos embedding
-        pos_embed = get_1d_sincos_pos_embed(self.pos_embed.shape[-1], self.patch_embed.num_patches, cls_token=True)
+        pos_embed = get_2d_sincos_pos_embed(self.pos_embed.shape[-1], self.patch_embed.grid_size, cls_token=True)
         self.pos_embed.data.copy_(torch.from_numpy(pos_embed).float().unsqueeze(0))
 
-        decoder_pos_embed = get_1d_sincos_pos_embed(self.decoder_pos_embed.shape[-1], self.patch_embed.num_patches, cls_token=True)
+        decoder_pos_embed = get_2d_sincos_pos_embed(self.decoder_pos_embed.shape[-1], self.patch_embed.grid_size, cls_token=True)
         self.decoder_pos_embed.data.copy_(torch.from_numpy(decoder_pos_embed).float().unsqueeze(0))
 
         # initialize patch_embed like nn.Linear (instead of nn.Conv2d)
@@ -114,8 +113,7 @@ class MaskedAutoencoderViT(nn.Module):
         imgs: (N, 5, H, W)
         """
         p, q = self.patch_embed.patch_size
-        h = 1
-        w = x.shape[1]
+        h, w = self.patch_embed.grid_size
         assert h * w == x.shape[1]
         
         img_channels = int(x.shape[2] / (p*q))
@@ -249,8 +247,8 @@ class MaskedAutoencoderViT(nn.Module):
         reg_weight = 0.10
         loss = loss.mean()
 
-        # return (1-reg_weight)*loss_patches + reg_weight*(1-ncc)
-        return (1-reg_weight)*loss + reg_weight*(1-ncc)
+        return (1-reg_weight)*loss_patches + reg_weight*(1-ncc)
+        # return (1-reg_weight)*loss + reg_weight*(1-ncc)
 
 
     def forward(self, imgs, mask_ratio=0.75):
