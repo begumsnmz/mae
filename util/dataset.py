@@ -45,8 +45,8 @@ class EEGDatasetFast(Dataset):
             data = transform(data)
 
         if self.augment == True:
-            augment = transforms.Compose([#Jitter(sigma=0.03),
-                                          #Rescaling(sigma=0.03),
+            augment = transforms.Compose([Jitter(sigma=0.03),
+                                          Rescaling(sigma=0.03),
                                           CropResizing(fixed_len=self.args.input_size[-1])])
             data = augment(data)
 

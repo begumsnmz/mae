@@ -153,7 +153,7 @@ def main(args):
 
     # load data
     dataset_mri = EEGDatasetFast(augment=True, args=args)
-    dataset_mri_train = Subset(dataset_mri, list(range(int(0*1), int(114*1))))
+    dataset_mri_train = Subset(dataset_mri, list(range(int(0*1), int(132*1))))
     # dataset_mri_train = Subset(dataset_mri, list(range(int(0*1), int(138*1))))
 
     if args.transfer_learning == True:
@@ -190,7 +190,7 @@ def main(args):
         dataset_train = dataset_mri_train
     
     dataset_mri_validate = EEGDatasetFast(transform=True, augment=False, args=args)
-    dataset_val = Subset(dataset_mri_validate, list(range(int(114*1), int(152*1))))
+    dataset_val = Subset(dataset_mri_validate, list(range(int(132*1), int(160*1))))
     # dataset_val = Subset(dataset_mri, list(range(int(138*1), int(184*1))))
 
     print("Dataset size: ", len(dataset_train))
@@ -253,9 +253,9 @@ def main(args):
     eff_batch_size = args.batch_size * args.accum_iter * misc.get_world_size()
     
     if args.lr is None:  # only base_lr is specified
-        args.lr = args.blr * eff_batch_size / 256
+        args.lr = args.blr * eff_batch_size / 4
 
-    print("base lr: %.2e" % (args.lr * 256 / eff_batch_size))
+    print("base lr: %.2e" % (args.lr * 4 / eff_batch_size))
     print("actual lr: %.2e" % args.lr)
 
     print("accumulate grad iterations: %d" % args.accum_iter)
@@ -284,7 +284,7 @@ def main(args):
             log_writer=log_writer,
             args=args
         )
-        if args.output_dir and (epoch % 100 == 0 or epoch + 1 == args.epochs):
+        if args.output_dir and (epoch % 50 == 0 or epoch + 1 == args.epochs):
             misc.save_model(
                 args=args, model=model, model_without_ddp=model_without_ddp, optimizer=optimizer,
                 loss_scaler=loss_scaler, epoch=epoch)

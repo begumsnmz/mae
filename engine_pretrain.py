@@ -132,6 +132,12 @@ def train_one_epoch(model: torch.nn.Module,
                 x_hat = samples_hat[0, ..., ::5].detach().cpu().numpy()
                 x_hat_masked = samples_hat_masked[0, ..., ::5].detach().cpu().numpy()
 
+                # samples of shape (Batch, Freq, Channel, Time)
+                if samples.shape[1] > 1:
+                    f_bin = 2
+                else:
+                    f_bin = 0
+
                 plt.close('all')
                 plt.subplot(611)
                 plt.plot(range(0, x.shape[-1], 1), x[0, 0, :])
@@ -140,11 +146,11 @@ def train_one_epoch(model: torch.nn.Module,
                 plt.subplot(613)
                 plt.plot(range(0, x.shape[-1], 1), x_hat_masked[0, 0, :])
                 plt.subplot(614)
-                plt.plot(range(0, x.shape[-1], 1), x[2, 32, :])
+                plt.plot(range(0, x.shape[-1], 1), x[f_bin, 32, :])
                 plt.subplot(615)
-                plt.plot(range(0, x.shape[-1], 1), x_hat[2, 32, :])
+                plt.plot(range(0, x.shape[-1], 1), x_hat[f_bin, 32, :])
                 plt.subplot(616)
-                plt.plot(range(0, x.shape[-1], 1), x_hat_masked[2, 32, :])
+                plt.plot(range(0, x.shape[-1], 1), x_hat_masked[f_bin, 32, :])
                 plt.tight_layout()
                 training_history["Reconstruction"] = wandb.Image(plt)
 
@@ -198,6 +204,12 @@ def evaluate(data_loader, model, device, epoch, log_writer=None, training_histor
             #     x_hat = samples_hat[0, ..., ::5].detach().cpu().numpy()
             #     x_hat_masked = samples_hat_masked[0, ..., ::5].detach().cpu().numpy()
 
+            #     # samples of shape (Batch, Freq, Channel, Time)
+            #     if samples.shape[1] > 1:
+            #         f_bin = 2
+            #     else:
+            #         f_bin = 0
+
             #     plt.close('all')
             #     plt.subplot(611)
             #     plt.plot(range(0, x.shape[-1], 1), x[0, 0, :])
@@ -206,11 +218,11 @@ def evaluate(data_loader, model, device, epoch, log_writer=None, training_histor
             #     plt.subplot(613)
             #     plt.plot(range(0, x.shape[-1], 1), x_hat_masked[0, 0, :])
             #     plt.subplot(614)
-            #     plt.plot(range(0, x.shape[-1], 1), x[2, 32, :])
+            #     plt.plot(range(0, x.shape[-1], 1), x[f_bin, 32, :])
             #     plt.subplot(615)
-            #     plt.plot(range(0, x.shape[-1], 1), x_hat[2, 32, :])
+            #     plt.plot(range(0, x.shape[-1], 1), x_hat[f_bin, 32, :])
             #     plt.subplot(616)
-            #     plt.plot(range(0, x.shape[-1], 1), x_hat_masked[2, 32, :])
+            #     plt.plot(range(0, x.shape[-1], 1), x_hat_masked[f_bin, 32, :])
             #     plt.tight_layout()
             #     training_history["Val reconstruction"] = wandb.Image(plt)
 

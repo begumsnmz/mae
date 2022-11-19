@@ -8,8 +8,8 @@ if [ "$external" = "on" ]; then
     batch_size="32"
     accum_iter=(4)
 else
-    batch_size="8"
-    accum_iter=(4)
+    batch_size="4"
+    accum_iter=(1)
 fi
 epochs="400"
 warmup_epochs="40"
@@ -17,19 +17,19 @@ warmup_epochs="40"
 input_channels="5"
 input_electrodes="65"
 time_steps="37000"
-model="mae_vit_medium_patchX"
+model="mae_vit_pluto_patchX"
 
-patch_height="13"
-patch_width=(200)
+patch_height="65"
+patch_width=(50)
 
 mask_ratio="0.75"
 
 weight_decay="0.05"
 
-blr_array=(1e-1)
+blr_array=(1e-3)
 
-data_path="/home/oturgut/PyTorchEEG/data/preprocessed/data_DINH_bw_10fold_normalized_sw_decomposed_fs200.pt"
-labels_path="/home/oturgut/PyTorchEEG/data/preprocessed/labels_2classes_DINH_bw_10fold_sw_fs200.pt"
+data_path="/home/oturgut/PyTorchEEG/data/preprocessed/data_DINH_701515_nf_sw_bw_fs200.pt"
+labels_path="/home/oturgut/PyTorchEEG/data/preprocessed/labels_DINH_701515.pt"
 
 transfer_data_path="/home/oturgut/PyTorchEEG/data/raw/data_SEED_normalized_sw_decomposed_fs200.pt"
 transfer_labels_path="/home/oturgut/PyTorchEEG/data/raw/labels_2classes_SEED_fs200.pt"
@@ -49,7 +49,7 @@ do
                 folder="seed"
                 pre_data="pre_"$folder"_b"$(($batch_size*$acc_it))"_blr"$blr
 
-                subfolder="decomposed/t37000/p"$pw"/m0.75/ncc"
+                subfolder="decomposed/t37000/p"$pw"/m0.75"
                 output_dir="./output/pre/"$folder"/"$subfolder"/"$pre_data
                 log_dir="./logs/pre/"$folder"/"$subfolder"/"$pre_data
 
@@ -58,7 +58,7 @@ do
                 folder="noExternal"
                 pre_data="pre_"$folder"_b"$(($batch_size*$acc_it))"_blr"$blr
 
-                subfolder="decomposed/t37000/p"pw"/m0.75/ncc"
+                subfolder="pluto/weight_norm/decomposed/t37000/p"$pw"/m0.75"
                 output_dir="./output/pre/"$folder"/"$subfolder"/"$pre_data
                 log_dir="./logs/pre/"$folder"/"$subfolder"/"$pre_data
             
