@@ -65,6 +65,9 @@ def get_args_parser():
     parser.add_argument('--input_size', default=(5, 65, 37000), type=Tuple,
                         help='images input size')
 
+    parser.add_argument('--crop_lbd', default=1.0, type=float,
+                        help='lower bound for cropping (data augmentation')
+
     parser.add_argument('--patch_height', type=int, default=65, metavar='N',
                         help='patch height')
     parser.add_argument('--patch_width', type=int, default=200, metavar='N',
@@ -198,13 +201,13 @@ def main(args):
     # ### THIS IS ONLY FOR SEED
     # class_weights = 900.0 / (3.0 * torch.Tensor([293.0, 311.0, 296.0])) # total_nb_samples / (nb_classes * samples_per_class) 
 
-    dataset_train = Subset(dataset, list(range(int(0*1), int(160*1))))
+    dataset_train = Subset(dataset, list(range(int(0*1), int(132*1))))
     class_weights = 189.0 / (2.0 * torch.Tensor([88.0, 101.0])) # total_nb_samples / (nb_classes * samples_per_class)
     # dataset_train = Subset(dataset, list(range(int(0*1), int(138*1))))
     # class_weights = 230.0 / (2.0 * torch.Tensor([88.0, 142.0])) # total_nb_samples / (nb_classes * samples_per_class)
     # dataset_train = ConcatDataset([Subset(dataset, list(range(int(0*1), int(92*1)))), Subset(dataset, list(range(int(138*1), int(184*1))))])
     if args.eval == False:
-        dataset_val = Subset(dataset_validate, list(range(int(160*1), int(189*1))))
+        dataset_val = Subset(dataset_validate, list(range(int(132*1), int(160*1))))
         # dataset_val = Subset(dataset_validate, list(range(int(138*1), int(184*1))))
     else:
         dataset_val = Subset(dataset_validate, list(range(int(160*1), int(189*1))))
@@ -249,7 +252,7 @@ def main(args):
             config = vars(args)
             wandb.init(project="MAE_He", config=config, entity="oturgut")
     elif args.eval and "checkpoint" not in args.resume.split("/")[-1]:
-        log_writer = SummaryWriter(log_dir=args.log_dir)
+        log_writer = SummaryWriter(log_dir=args.log_dir + "/eval")
     else:
         log_writer = None
 

@@ -67,6 +67,9 @@ def get_args_parser():
     parser.add_argument('--input_size', default=(5, 65, 37000), type=Tuple,
                         help='images input size')
 
+    parser.add_argument('--crop_lbd', default=1.0, type=float,
+                        help='lower bound for cropping (data augmentation')
+
     parser.add_argument('--patch_height', type=int, default=65, metavar='N',
                         help='patch height')
     parser.add_argument('--patch_width', type=int, default=200, metavar='N',
@@ -174,15 +177,15 @@ def main(args):
     dataset = EEGDatasetFast(augment=True, args=args)
     dataset_validate = EEGDatasetFast(transform=True, augment=False, args=args)
 
-    dataset_train = Subset(dataset, list(range(int(0*1), int(114*1))))
+    dataset_train = Subset(dataset, list(range(int(0*1), int(132*1))))
     class_weights = 189.0 / (2.0 * torch.Tensor([88.0, 101.0])) # total_nb_samples / (nb_classes * samples_per_class)
     # dataset_train = Subset(dataset, list(range(int(0*1), int(138*1))))
     # class_weights = 230.0 / (2.0 * torch.Tensor([88.0, 142.0])) # total_nb_samples / (nb_classes * samples_per_class)
     if args.eval == False:
-        dataset_val = Subset(dataset_validate, list(range(int(114*1), int(152*1))))
+        dataset_val = Subset(dataset_validate, list(range(int(132*1), int(160*1))))
         # dataset_val = Subset(dataset_validate, list(range(int(138*1), int(184*1))))
     else:
-        dataset_val = Subset(dataset_validate, list(range(int(152*1), int(189*1))))
+        dataset_val = Subset(dataset_validate, list(range(int(160*1), int(189*1))))
         # dataset_val = Subset(dataset_validate, list(range(int(184*1), int(230*1))))
 
     print("Dataset train size: ", len(dataset_train))
@@ -215,6 +218,8 @@ def main(args):
         if args.wandb == True:
             config = vars(args)
             wandb.init(project="MAE_He", config=config, entity="oturgut")
+    elif args.eval and "checkpoint" not in args.resume.split("/")[-1]:
+        log_writer = SummaryWriter(log_dir=args.log_dir + "/eval")
     else:
         log_writer = None
 
@@ -291,9 +296,9 @@ def main(args):
     eff_batch_size = args.batch_size * args.accum_iter * misc.get_world_size()
     
     if args.lr is None:  # only base_lr is specified
-        args.lr = args.blr * eff_batch_size / 256
+        args.lr = args.blr * eff_batch_size / 4
 
-    print("base lr: %.2e" % (args.lr * 256 / eff_batch_size))
+    print("base lr: %.2e" % (args.lr * 4 / eff_batch_size))
     print("actual lr: %.2e" % args.lr)
 
     print("accumulate grad iterations: %d" % args.accum_iter)
@@ -317,11 +322,33 @@ def main(args):
 
     print("criterion = %s" % str(criterion))
 
-    misc.load_model(args=args, model_without_ddp=model_without_ddp, optimizer=optimizer, loss_scaler=loss_scaler)
+    if not args.eval:
+        misc.load_model(args=args, model_without_ddp=model_without_ddp, optimizer=optimizer, loss_scaler=loss_scaler)
 
     if args.eval:
-        test_stats = evaluate(data_loader_val, model, device)
-        print(f"Accuracy / F1 / AUROC of the network on the {len(dataset_val)} test images: {test_stats['acc1']:.1f}% / {test_stats['f1']:.1f}% / {test_stats['auroc']:.1f}%")
+        sub_strings = args.resume.split("/")
+        if "checkpoint" in sub_strings[-1]:
+            nb_ckpts = 1
+        else:
+            nb_ckpts = int(sub_strings[-1])+1
+
+        for epoch in range(0, nb_ckpts):
+            if "checkpoint" not in sub_strings[-1]:
+                args.resume = "/".join(sub_strings[:-1]) + "/checkpoint-" + str(epoch) + ".pth"
+
+            misc.load_model(args=args, model_without_ddp=model_without_ddp, optimizer=optimizer, loss_scaler=loss_scaler)
+
+            test_stats = evaluate(data_loader_val, model, device)
+            print(f"Accuracy / F1 / AUROC of the network on the {len(dataset_val)} test images: {test_stats['acc1']:.1f}% / {test_stats['f1']:.1f}% / {test_stats['auroc']:.1f}%")
+
+            if log_writer is not None:
+                log_writer.add_scalar('perf/test_acc1', test_stats['acc1'], epoch)
+                #log_writer.add_scalar('perf/test_acc5', test_stats['acc5'], epoch)
+                log_writer.add_scalar('perf/test_acc', test_stats['acc'], epoch)
+                log_writer.add_scalar('perf/test_f1', test_stats['f1'], epoch)
+                log_writer.add_scalar('perf/test_auroc', test_stats['auroc'], epoch)
+                log_writer.add_scalar('perf/test_loss', test_stats['loss'], epoch)
+        
         exit(0)
 
     print(f"Start training for {args.epochs} epochs")

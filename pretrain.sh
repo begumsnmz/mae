@@ -11,28 +11,30 @@ else
     batch_size="4"
     accum_iter=(1)
 fi
-epochs="400"
-warmup_epochs="40"
+epochs="750"
+warmup_epochs="75"
 
 input_channels="5"
-input_electrodes="65"
-time_steps="37000"
-model="mae_vit_pluto_patchX"
+input_electrodes="64"
+time_steps="30000"
+model="mae_vit_small_patchX"
 
-patch_height="65"
+crop_lbd="0.65"
+
+patch_height="8"
 patch_width=(50)
 
 mask_ratio="0.75"
 
-weight_decay="0.05"
+weight_decay="0.1"
 
 blr_array=(1e-3)
 
 data_path="/home/oturgut/PyTorchEEG/data/preprocessed/data_DINH_701515_nf_sw_bw_fs200.pt"
 labels_path="/home/oturgut/PyTorchEEG/data/preprocessed/labels_DINH_701515.pt"
 
-transfer_data_path="/home/oturgut/PyTorchEEG/data/raw/data_SEED_normalized_sw_decomposed_fs200.pt"
-transfer_labels_path="/home/oturgut/PyTorchEEG/data/raw/labels_2classes_SEED_fs200.pt"
+transfer_data_path="/home/oturgut/PyTorchEEG/data/preprocessed/data_SEED_sw_bw_fs200.pt"
+transfer_labels_path="/home/oturgut/PyTorchEEG/data/preprocessed/labels_SEED.pt"
 
 num_workers="32"
 
@@ -49,20 +51,20 @@ do
                 folder="seed"
                 pre_data="pre_"$folder"_b"$(($batch_size*$acc_it))"_blr"$blr
 
-                subfolder="decomposed/t37000/p"$pw"/m0.75"
+                subfolder="small/cropResize/decomposed/t"$time_steps"/p"$patch_height"x"$pw"/m"$mask_ratio"/wd"$weight_decay"/crop"$crop_lbd
                 output_dir="./output/pre/"$folder"/"$subfolder"/"$pre_data
                 log_dir="./logs/pre/"$folder"/"$subfolder"/"$pre_data
 
-                cmd="python3 main_pretrain.py --wandb --transfer_learning --transfer_data_path $transfer_data_path --transfer_labels_path $transfer_labels_path --input_channels $input_channels --input_electrodes $input_electrodes --time_steps $time_steps --patch_height $patch_height --patch_width $pw --model $model --batch_size $batch_size --epochs $epochs --accum_iter $acc_it --mask_ratio $mask_ratio --weight_decay $weight_decay --blr $blr --warmup_epoch $warmup_epochs --data_path $data_path --labels_path $labels_path --output_dir $output_dir --log_dir $log_dir --num_workers $num_workers"
+                cmd="python3 main_pretrain.py --wandb --crop_lbd $crop_lbd --transfer_learning --transfer_data_path $transfer_data_path --transfer_labels_path $transfer_labels_path --input_channels $input_channels --input_electrodes $input_electrodes --time_steps $time_steps --patch_height $patch_height --patch_width $pw --model $model --batch_size $batch_size --epochs $epochs --accum_iter $acc_it --mask_ratio $mask_ratio --weight_decay $weight_decay --blr $blr --warmup_epoch $warmup_epochs --data_path $data_path --labels_path $labels_path --output_dir $output_dir --log_dir $log_dir --num_workers $num_workers"
             else
                 folder="noExternal"
                 pre_data="pre_"$folder"_b"$(($batch_size*$acc_it))"_blr"$blr
 
-                subfolder="pluto/weight_norm/decomposed/t37000/p"$pw"/m0.75"
+                subfolder="small/cropResize/decomposed/t"$time_steps"/p"$patch_height"x"$pw"/m"$mask_ratio"/wd"$weight_decay"/crop"$crop_lbd
                 output_dir="./output/pre/"$folder"/"$subfolder"/"$pre_data
                 log_dir="./logs/pre/"$folder"/"$subfolder"/"$pre_data
             
-                cmd="python3 main_pretrain.py --wandb --input_channels $input_channels --input_electrodes $input_electrodes --time_steps $time_steps --patch_height $patch_height --patch_width $pw --model $model --batch_size $batch_size --epochs $epochs --accum_iter $acc_it --mask_ratio $mask_ratio --weight_decay $weight_decay --blr $blr --warmup_epoch $warmup_epochs --data_path $data_path --labels_path $labels_path --output_dir $output_dir --log_dir $log_dir --num_workers $num_workers"
+                cmd="python3 main_pretrain.py --wandb --crop_lbd $crop_lbd --input_channels $input_channels --input_electrodes $input_electrodes --time_steps $time_steps --patch_height $patch_height --patch_width $pw --model $model --batch_size $batch_size --epochs $epochs --accum_iter $acc_it --mask_ratio $mask_ratio --weight_decay $weight_decay --blr $blr --warmup_epoch $warmup_epochs --data_path $data_path --labels_path $labels_path --output_dir $output_dir --log_dir $log_dir --num_workers $num_workers"
             fi
 
             echo $cmd && $cmd

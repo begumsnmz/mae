@@ -65,6 +65,9 @@ def get_args_parser():
     parser.add_argument('--input_size', default=(5, 65, 37000), type=Tuple,
                         help='images input size')
 
+    parser.add_argument('--crop_lbd', default=1.0, type=float,
+                        help='lower bound for cropping (data augmentation')
+                        
     parser.add_argument('--patch_height', type=int, default=65, metavar='N',
                         help='patch height')
     parser.add_argument('--patch_width', type=int, default=200, metavar='N',

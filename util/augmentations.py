@@ -126,22 +126,23 @@ class CropResizing(object):
     """
         Randomly crop the sample and resize to the original length.
     """
-    def __init__(self, lower_bnd=0.75, upper_bnd=0.75, resize=False, fixed_len=None, start_idx=None) -> None:
+    def __init__(self, lower_bnd=0.75, upper_bnd=0.75, fixed_crop_len=None, start_idx=None, resize=False, fixed_resize_len=None) -> None:
         self.lower_bnd = lower_bnd
         self.upper_bnd = upper_bnd
-        self.resize = resize
-        self.fixed_len = fixed_len
+        self.fixed_crop_len = fixed_crop_len
         self.start_idx = start_idx
+        self.resize = resize
+        self.fixed_resize_len = fixed_resize_len
 
     def __call__(self, sample) -> Any:
         sample_dims = sample.dim()
         
         # define crop size
-        if self.fixed_len is not None:
-            target_len = self.fixed_len
+        if self.fixed_crop_len is not None:
+            crop_len = self.fixed_crop_len
         else:
             # randomly sample the target length from a uniform distribution
-            target_len = int(sample.shape[-1]*np.random.uniform(low=self.lower_bnd, high=self.upper_bnd))
+            crop_len = int(sample.shape[-1]*np.random.uniform(low=self.lower_bnd, high=self.upper_bnd))
         
         # define cut-off point
         if self.start_idx is not None:
@@ -149,30 +150,37 @@ class CropResizing(object):
         else:
             # randomly sample the starting point for the cropping (cut-off)
             try:
-                start_idx = np.random.randint(low=0, high=sample.shape[-1]-target_len)
+                start_idx = np.random.randint(low=0, high=sample.shape[-1]-crop_len)
             except ValueError:
-                # if sample.shape[-1]-target_len == 0, np.random.randint() throws an error
+                # if sample.shape[-1]-crop_len == 0, np.random.randint() throws an error
                 start_idx = 0 
 
-        cropped_sample = torch.zeros_like(sample)
 
-        # resize to original length
+        # crop and resize the signal
         if self.resize == True:
+            # define length after resize operation
+            if self.fixed_resize_len is not None:
+                resize_len = self.fixed_resize_len
+            else:
+                resize_len = sample.shape[-1]
+
             # crop and resize the signal
+            cropped_sample = torch.zeros_like(sample[..., :resize_len])
             if sample_dims == 2:
                 for ch in range(sample.shape[-2]):
-                    resized_signal = np.interp(np.linspace(0, target_len, num=sample.shape[-1]), np.arange(target_len), sample[ch, start_idx:start_idx+target_len])
+                    resized_signal = np.interp(np.linspace(0, crop_len, num=resize_len), np.arange(crop_len), sample[ch, start_idx:start_idx+crop_len])
                     cropped_sample[ch, :] = torch.from_numpy(resized_signal)
             elif sample_dims == 3:
                 for f_bin in range(sample.shape[-3]):
                     for ch in range(sample.shape[-2]):
-                        resized_signal = np.interp(np.linspace(0, target_len, num=sample.shape[-1]), np.arange(target_len), sample[f_bin, ch, start_idx:start_idx+target_len])
+                        resized_signal = np.interp(np.linspace(0, crop_len, num=resize_len), np.arange(crop_len), sample[f_bin, ch, start_idx:start_idx+crop_len])
                         cropped_sample[f_bin, ch, :] = torch.from_numpy(resized_signal)
             else:
                 sys.exit('Error. Sample dimension does not match.')
         else:
             # only crop the signal
-            cropped_sample = sample[..., start_idx:start_idx+target_len]
+            cropped_sample = torch.zeros_like(sample)
+            cropped_sample = sample[..., start_idx:start_idx+crop_len]
 
         return cropped_sample
 
