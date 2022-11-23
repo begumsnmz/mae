@@ -153,8 +153,7 @@ class CropResizing(object):
                 start_idx = np.random.randint(low=0, high=sample.shape[-1]-crop_len)
             except ValueError:
                 # if sample.shape[-1]-crop_len == 0, np.random.randint() throws an error
-                start_idx = 0 
-
+                start_idx = 0
 
         # crop and resize the signal
         if self.resize == True:
