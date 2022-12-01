@@ -65,9 +65,6 @@ def get_args_parser():
     parser.add_argument('--input_size', default=(5, 65, 37000), type=Tuple,
                         help='images input size')
 
-    parser.add_argument('--crop_lbd', default=1.0, type=float,
-                        help='lower bound for cropping (data augmentation')
-
     parser.add_argument('--patch_height', type=int, default=65, metavar='N',
                         help='patch height')
     parser.add_argument('--patch_width', type=int, default=200, metavar='N',
@@ -77,6 +74,18 @@ def get_args_parser():
 
     parser.add_argument('--drop_path', type=float, default=0.1, metavar='PCT',
                         help='Drop path rate (default: 0.1)')
+                        
+    # Augmentation parameters
+    parser.add_argument('--jitter_sigma', default=0.03, type=float,
+                        help='Jitter sigma N(0, sigma) (default: 0.1)')
+    parser.add_argument('--rescaling_sigma', default=0.1, type=float,
+                        help='Rescaling sigma N(0, sigma) (default: 0.1)')
+    parser.add_argument('--ft_surr_phase_noise', default=0.1, type=float,
+                        help='Phase noise magnitude (default: 0.1)')
+    parser.add_argument('--freq_shift_delta', default=0.005, type=float,
+                        help='Delta for the frequency shift (default: 0.005)')
+    parser.add_argument('--crop_lbd', default=1.0, type=float,
+                        help='lower bound for cropping (data augmentation')
 
     # Optimizer parameters
     parser.add_argument('--clip_grad', type=float, default=None, metavar='NORM',

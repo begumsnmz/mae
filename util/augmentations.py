@@ -4,6 +4,8 @@ import torch
 import torch.fft as fft
 
 import numpy as np
+from numbers import Real
+from sklearn.utils import check_random_state
 
 from typing import Any
 
@@ -61,9 +63,11 @@ class TimeToFourier(object):
     """
         Go from time domain to frequency domain.
     """
-    def __init__(self, factor=1) -> None:
+    def __init__(self, factor=1, return_half=False, unsqueeze=False) -> None:
         super().__init__()
         self.factor = factor
+        self.return_half = return_half
+        self.unsqueeze = unsqueeze
 
     def __call__(self, sample) -> torch.Tensor:
         sample_dims = sample.dim()
@@ -75,33 +79,53 @@ class TimeToFourier(object):
         # note: the output of the Fourier transform is complex (real + imaginary part)
         X_f = 1/N * fft.fftshift(fft.fft(sample, n=N))
 
-        # concatenate the real and imaginary parts 
-        # note: the Fourier transform of a signal with only real parts is symmetric 
-        #       thus only half of the transform is returned to save memory
         X_f_complex = torch.Tensor()
 
-        if sample_dims == 2:
-            for ch in range(X_f.shape[0]):
-                real_part = torch.real(X_f[ch, int(N/2):]).unsqueeze(dim=0)
-                imag_part = torch.imag(X_f[ch, int(N/2):]).unsqueeze(dim=0)
+        if self.unsqueeze == False:
+            # # if you want real and imag part to be concatenated 
+            # # such that the output has shape [ch*2, time_steps]
+            if sample_dims == 2:
+                for ch in range(X_f.shape[0]):
+                    real_part = torch.real(X_f[ch, :]).unsqueeze(dim=0)
+                    imag_part = torch.imag(X_f[ch, :]).unsqueeze(dim=0)
 
-                complex_pair = torch.cat((real_part, imag_part), dim=0)
-                X_f_complex = torch.cat((X_f_complex, complex_pair), dim=0)
-
-        elif sample_dims == 3:
-            X_f_bin_complex = torch.Tensor()
-            
-            for bin in range(X_f.shape[0]):
-                for ch in range(X_f.shape[1]):
-                    real_part = torch.real(X_f[bin, ch, int(N/2):]).unsqueeze(dim=0)
-                    imag_part = torch.imag(X_f[bin, ch, int(N/2):]).unsqueeze(dim=0)
-
+                    # concatenate the real and imaginary parts 
                     complex_pair = torch.cat((real_part, imag_part), dim=0)
-                    X_f_bin_complex = torch.cat((X_f_bin_complex, complex_pair), dim=0)
 
-                X_f_complex = torch.cat((X_f_complex, X_f_bin_complex.unsqueeze(dim=0)), dim=0)
+                    # concatenate the channels 
+                    X_f_complex = torch.cat((X_f_complex, complex_pair), dim=0)
+            elif sample_dims == 3:
+                    for bin in range(X_f.shape[0]):
+                        X_f_bin_complex = torch.Tensor()
+                        
+                        for ch in range(X_f.shape[1]):
+                            real_part = torch.real(X_f[bin, ch, :]).unsqueeze(dim=0)
+                            imag_part = torch.imag(X_f[bin, ch, :]).unsqueeze(dim=0)
 
-        return X_f_complex
+                            # concatenate the real and imaginary parts 
+                            complex_pair = torch.cat((real_part, imag_part), dim=0)#.unsqueeze(dim=0)
+
+                            # concatenate the channels
+                            X_f_bin_complex = torch.cat((X_f_bin_complex, complex_pair), dim=0)
+
+                        # concatenate the frequency bins
+                        X_f_complex = torch.cat((X_f_complex, X_f_bin_complex.unsqueeze(dim=0)), dim=0)
+        else:
+            # # if you want real and imag part to be concatenated 
+            # # such that the output has shape [2, ch, time_steps]
+            X_f_complex = X_f.unsqueeze(dim=-3)
+            X_f_real = torch.real(X_f_complex)
+            X_f_imag = torch.imag(X_f_complex)
+
+            X_f_complex = torch.cat((X_f_real, X_f_imag), dim=-3)
+
+        # note: the Fourier transform of a signal with only real parts is symmetric 
+        #       thus only half of the transform can be returned to save memory
+        start_idx = 0
+        if self.return_half == True:
+            start_idx = int(N/2)
+        
+        return X_f_complex[..., start_idx:]
 
 class FourierToTime(object):
     """
@@ -187,49 +211,29 @@ class Interpolation(object):
     """
         Undersample the signal and interpolate to initial length.
     """
-    def __init__(self, step=2) -> None:
+    def __init__(self, step=2, prob=1.0) -> None:
         self.step = step
+        self.prob = prob
 
     def __call__(self, sample) -> Any:
-        sample_sub = sample[..., ::self.step]
-        sample_interpolated = np.ones_like(sample)
-        
-        sample_dims = sample.dim()
-        if sample_dims == 2:
-            for ch in range(sample.shape[-2]):
-                sample_interpolated[ch] = np.interp(np.arange(0, sample.shape[-1]), np.arange(0, sample.shape[-1], step=self.step), sample_sub[ch])
-        elif sample_dims == 3:
-            for f_bin in range(sample.shape[-3]):
+        if np.random.uniform() < self.prob:
+            sample_sub = sample[..., ::self.step]
+            sample_interpolated = np.ones_like(sample)
+            
+            sample_dims = sample.dim()
+            if sample_dims == 2:
                 for ch in range(sample.shape[-2]):
-                    sample_interpolated[f_bin, ch] = np.interp(np.arange(0, sample.shape[-1]), np.arange(0, sample.shape[-1], step=self.step), sample_sub[f_bin, ch])
+                    sample_interpolated[ch] = np.interp(np.arange(0, sample.shape[-1]), np.arange(0, sample.shape[-1], step=self.step), sample_sub[ch])
+            elif sample_dims == 3:
+                for f_bin in range(sample.shape[-3]):
+                    for ch in range(sample.shape[-2]):
+                        sample_interpolated[f_bin, ch] = np.interp(np.arange(0, sample.shape[-1]), np.arange(0, sample.shape[-1], step=self.step), sample_sub[f_bin, ch])
+            else:
+                sys.exit('Error. Sample dimension does not match.')
+
+            return torch.from_numpy(sample_interpolated)
         else:
-            sys.exit('Error. Sample dimension does not match.')
-
-        return torch.from_numpy(sample_interpolated)
-
-class Masking_(object):
-    """
-        Randomly zero-mask the sample.
-    """
-    def __init__(self, factor=0.25, fs=250, patch_size_sec=5) -> None:
-        self.factor = factor                    # fraction to be masked out
-        self.patch_size = patch_size_sec * fs   # patch_size[ticks] = patch_size[sec] * fs[Hz]
-
-    def __call__(self, sample) -> Any:
-        # determine the number of patches to be masked
-        nb_patches = round(self.factor * sample.shape[-1] / self.patch_size)
- 
-        mask = torch.ones_like(sample)
-
-        for ch in range(sample.shape[-2]):
-            # starting points of the patches to be masked
-            indices = torch.randint(low=0, high=sample.shape[-1]-self.patch_size, size=(nb_patches,))
-
-            # mask the signal
-            for idx in indices:
-                mask[..., ch, idx:idx+self.patch_size] = 0
-
-        return sample * mask
+            return sample
 
 class Masking(object):
     """
@@ -237,67 +241,250 @@ class Masking(object):
         Got this from https://stackoverflow.com/questions/70092136/how-do-i-create-a-random-mask-matrix-where-we-mask-a-contiguous-length
         Don't touch the code!
     """
-    def __init__(self, factor=0.25, fs=250, patch_size_sec=5) -> None:
+    def __init__(self, factor:float=0.75, fs:int=200, patch_size_sec:float=1, masking_mode="random", prob=1.0) -> None:
         self.factor = factor                    # fraction to be masked out
-        self.patch_size = patch_size_sec * fs   # patch_size[ticks] = patch_size[sec] * fs[Hz]
+        self.patch_size = int(patch_size_sec * fs)   # patch_size[ticks] = patch_size[sec] * fs[Hz]
+        self.masking_mode = masking_mode
+        self.prob = prob
 
     def __call__(self, sample) -> Any:
-        # create the mask
-        mask = torch.ones_like(sample)
+        if np.random.uniform() < self.prob:
+            # create the mask
+            mask = torch.ones_like(sample)
 
-        # determine the number of patches to be masked
-        nb_patches = round(self.factor * sample.shape[-1] / self.patch_size)
-        
+            # determine the number of patches to be masked
+            nb_patches = round(self.factor * sample.shape[-1] / self.patch_size)
+            
+            indices_weights = np.random.random((mask.shape[0], nb_patches + 1))
 
-        indices_weights = np.random.random((mask.shape[0], nb_patches + 1))
+            number_of_ones = mask.shape[-1] - self.patch_size * nb_patches
 
-        number_of_ones = mask.shape[-1] - self.patch_size * nb_patches
+            ones_sizes = np.round(indices_weights[:, :nb_patches].T
+                                * (number_of_ones / np.sum(indices_weights, axis=-1))).T.astype(np.int32)
+            ones_sizes[:, 1:] += self.patch_size
 
-        ones_sizes = np.round(indices_weights[:, :nb_patches].T
-                            * (number_of_ones / np.sum(indices_weights, axis=-1))).T.astype(np.int32)
+            zeros_start_indices = np.cumsum(ones_sizes, axis=-1)
 
-        ones_sizes[:, 1:] += self.patch_size
+            if self.masking_mode == "block":
+                for zeros_idx in zeros_start_indices[0]:
+                    mask[..., zeros_idx: zeros_idx + self.patch_size] = 0
+            else:
+                for sample_idx in range(len(mask)):
+                    for zeros_idx in zeros_start_indices[sample_idx]:
+                        mask[sample_idx, zeros_idx: zeros_idx + self.patch_size] = 0
 
-        zeros_start_indices = np.cumsum(ones_sizes, axis=-1)
-
-        for sample_idx in range(len(mask)):
-            for zeros_idx in zeros_start_indices[sample_idx]:
-                mask[sample_idx, zeros_idx: zeros_idx + self.patch_size] = 0
-
-        return sample * mask, 1-mask
-
-
-class Masking(object):
+            return sample * mask
+        else:
+            return sample
+    
+class FTSurrogate(object):
     """
-        Randomly zero-mask the sample.
-        Got this from https://stackoverflow.com/questions/70092136/how-do-i-create-a-random-mask-matrix-where-we-mask-a-contiguous-length
-        Don't touch the code!
+    FT surrogate augmentation of a single EEG channel, as proposed in [1]_.
+    Code (modified) from https://github.com/braindecode/braindecode/blob/master/braindecode/augmentation/functional.py 
+    
+
+    Parameters
+    ----------
+    X : torch.Tensor
+        EEG input example.
+    phase_noise_magnitude: float
+        Float between 0 and 1 setting the range over which the phase
+        pertubation is uniformly sampled:
+        [0, `phase_noise_magnitude` * 2 * `pi`].
+    channel_indep : bool
+        Whether to sample phase perturbations independently for each channel or
+        not. It is advised to set it to False when spatial information is
+        important for the task, like in BCI.
+    random_state: int | numpy.random.Generator, optional
+        Used to draw the phase perturbation. Defaults to None.
+
+    Returns
+    -------
+    torch.Tensor
+        Transformed inputs.
+    torch.Tensor
+        Transformed labels.
+
+    References
+    ----------
+    .. [1] Schwabedal, J. T., Snyder, J. C., Cakmak, A., Nemati, S., &
+       Clifford, G. D. (2018). Addressing Class Imbalance in Classification
+       Problems of Noisy Signals by using Fourier Transform Surrogates. arXiv
+       preprint arXiv:1806.08675.
     """
-    def __init__(self, factor=0.75, fs=200, patch_size_sec=1) -> None:
-        self.factor = factor                    # fraction to be masked out
-        self.patch_size = patch_size_sec * fs   # patch_size[ticks] = patch_size[sec] * fs[Hz]
+    def __init__(self, phase_noise_magnitude, channel_indep=False, seed=None, prob=1.0) -> None:
+        self.phase_noise_magnitude = phase_noise_magnitude
+        self.channel_indep = channel_indep
+        self.seed = seed
+        self.prob = prob
+        self._new_random_fft_phase = {
+            0: self._new_random_fft_phase_even,
+            1: self._new_random_fft_phase_odd
+        }
+
+    def _new_random_fft_phase_odd(self, c, n, device='cpu', seed=None):
+        rng = check_random_state(seed)
+        random_phase = torch.from_numpy(
+            2j * np.pi * rng.random((c, (n - 1) // 2))
+        ).to(device)
+
+        return torch.cat([
+            torch.zeros((c, 1), device=device),
+            random_phase,
+            -torch.flip(random_phase, [-1]).to(device=device)
+        ], dim=-1)
+    
+    def _new_random_fft_phase_even(self, c, n, device='cpu', seed=None):
+        rng = check_random_state(seed)
+        random_phase = torch.from_numpy(
+            2j * np.pi * rng.random((c, n // 2 - 1))
+        ).to(device)
+
+        return torch.cat([
+            torch.zeros((c, 1), device=device),
+            random_phase,
+            torch.zeros((c, 1), device=device),
+            -torch.flip(random_phase, [-1]).to(device=device)
+        ], dim=-1)
 
     def __call__(self, sample) -> Any:
-        # create the mask
-        mask = torch.ones_like(sample)
+        if np.random.uniform() < self.prob:
+            assert isinstance(
+                self.phase_noise_magnitude,
+                (Real, torch.FloatTensor, torch.cuda.FloatTensor)
+            ) and 0 <= self.phase_noise_magnitude <= 1, (
+                f"eps must be a float beween 0 and 1. Got {self.phase_noise_magnitude}."
+            )
 
-        # determine the number of patches to be masked
-        nb_patches = round(self.factor * sample.shape[-1] / self.patch_size)
-        
+            f = fft.fft(sample.double(), dim=-1)
 
-        indices_weights = np.random.random((mask.shape[0], nb_patches + 1))
+            n = f.shape[-1]
+            random_phase = self._new_random_fft_phase[n % 2](
+                f.shape[-2] if self.channel_indep else 1,
+                n,
+                device=sample.device,
+                seed=self.seed
+            )
 
-        number_of_ones = mask.shape[-1] - self.patch_size * nb_patches
+            if not self.channel_indep:
+                random_phase = torch.tile(random_phase, (f.shape[-2], 1))
 
-        ones_sizes = np.round(indices_weights[:, :nb_patches].T
-                            * (number_of_ones / np.sum(indices_weights, axis=-1))).T.astype(np.int32)
+            if isinstance(self.phase_noise_magnitude, torch.Tensor):
+                self.phase_noise_magnitude = self.phase_noise_magnitude.to(sample.device)
 
-        ones_sizes[:, 1:] += self.patch_size
+            f_shifted = f * torch.exp(self.phase_noise_magnitude * random_phase)
+            shifted = fft.ifft(f_shifted, dim=-1)
+            sample_transformed = shifted.real.float()
 
-        zeros_start_indices = np.cumsum(ones_sizes, axis=-1)
+            return sample_transformed
+        else:
+            return sample
+    
+class FrequencyShift(object):
+    """
+    Adds a shift in the frequency domain to all channels.
+    Note that here, the shift is the same for all channels of a single example.
+    Code (modified) from https://github.com/braindecode/braindecode/blob/master/braindecode/augmentation/functional.py
 
-        #for sample_idx in range(len(mask)):
-        for zeros_idx in zeros_start_indices[0]:
-            mask[..., zeros_idx: zeros_idx + self.patch_size] = 0
+    Parameters
+    ----------
+    X : torch.Tensor
+        EEG input example or batch.
+    y : torch.Tensor
+        EEG labels for the example or batch.
+    delta_freq : float
+        The amplitude of the frequency shift (in Hz).
+    sfreq : float
+        Sampling frequency of the signals to be transformed.
+    Returns
+    -------
+    torch.Tensor
+        Transformed inputs.
+    torch.Tensor
+        Transformed labels.
+    """
+    def __init__(self, delta_freq=0, s_freq=200, prob=1.0) -> None:
+        self.delta_freq = delta_freq
+        self.s_freq = s_freq
+        self.prob = prob
 
-        return sample * mask
+    def _analytic_transform(self, X):
+        if torch.is_complex(X):
+            raise ValueError("X must be real.")
+
+        N = X.shape[-1]
+        f = fft.fft(X, N, dim=-1)
+        h = torch.zeros_like(f)
+        if N % 2 == 0:
+            h[..., 0] = h[..., N // 2] = 1
+            h[..., 1:N // 2] = 2
+        else:
+            h[..., 0] = 1
+            h[..., 1:(N + 1) // 2] = 2
+
+        return fft.ifft(f * h, dim=-1)
+
+    def _nextpow2(self, n):
+        """Return the first integer N such that 2**N >= abs(n)."""
+
+        return int(np.ceil(np.log2(np.abs(n))))
+
+    def _frequency_shift(self, X, fs, f_shift):
+        """
+        Shift the specified signal by the specified frequency.
+        See https://gist.github.com/lebedov/4428122
+        """
+        nb_channels, N_orig = X.shape[-2:]
+
+        # Pad the signal with zeros to prevent the FFT invoked by the transform
+        # from slowing down the computation:
+        N_padded = 2 ** self._nextpow2(N_orig)
+        t = torch.arange(N_padded, device=X.device) / fs
+        padded = torch.nn.functional.pad(X, (0, N_padded - N_orig))
+
+        analytical = self._analytic_transform(padded)
+        if isinstance(f_shift, (float, int, np.ndarray, list)):
+            f_shift = torch.as_tensor(f_shift).float()
+
+        reshaped_f_shift = f_shift.repeat(N_padded, nb_channels).T
+        shifted = analytical * torch.exp(2j * np.pi * reshaped_f_shift * t)
+
+        return shifted[..., :N_orig].real.float()
+
+    def __call__(self, sample) -> Any:
+        if np.random.uniform() < self.prob:
+            sample_transformed = self._frequency_shift(
+                X=sample,
+                fs=self.s_freq,
+                f_shift=self.delta_freq,
+            )
+
+            return sample_transformed
+        else:
+            return sample
+    
+class TimeFlip(object):
+    """
+        Flip the signal vertically.
+    """
+    def __init__(self, prob=1.0) -> None:
+        self.prob = prob
+
+    def __call__(self, sample) -> Any:
+        if np.random.uniform() < self.prob:
+            return torch.flip(sample, dims=[-1])
+        else:
+            return sample
+    
+class SignFlip(object):
+    """
+        Flip the signal horizontally.
+    """
+    def __init__(self, prob=1.0) -> None:
+        self.prob = prob
+
+    def __call__(self, sample) -> Any:
+        if np.random.uniform() < self.prob:
+            return -1*sample
+        else:
+            return sample

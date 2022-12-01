@@ -1,14 +1,15 @@
 import os
+import sys
 from typing import Any, Tuple
 
-import math
+import numpy as np
 
 import torch
 from torch.utils.data import Dataset
 from torchvision import transforms
 
-from util.transforms import MinMaxScaling, Normalization, ArrayToTensor, ScalarToTensor, OneHotEncoding
-from util.augmentations import Jitter, Masking, Rescaling, Permutation, Shift, TimeToFourier, CropResizing, Interpolation
+from util import transformations
+from util import augmentations
 
 
 class EEGDatasetFast(Dataset):
@@ -41,15 +42,15 @@ class EEGDatasetFast(Dataset):
         data = data[:, :self.args.input_electrodes, :]
         
         if self.transform == True:
-            transform = CropResizing(fixed_crop_len=self.args.input_size[-1], start_idx=0)
+            transform = augmentations.CropResizing(fixed_crop_len=self.args.input_size[-1], start_idx=0)
             data = transform(data)
 
         if self.augment == True:
             lower_bnd = self.args.crop_lbd * self.args.input_size[-1] / data.shape[-1]
             upper_bnd = 1.00 * self.args.input_size[-1] / data.shape[-1]
-            augment = transforms.Compose([Jitter(sigma=0.03),
-                                          Rescaling(sigma=0.05),
-                                          CropResizing(lower_bnd=lower_bnd, upper_bnd=upper_bnd, resize=True, fixed_resize_len=self.args.input_size[-1])])
+            augment = transforms.Compose([augmentations.Jitter(sigma=0.03),
+                                          augmentations.Rescaling(sigma=0.05),
+                                          augmentations.CropResizing(lower_bnd=lower_bnd, upper_bnd=upper_bnd, resize=True, fixed_resize_len=self.args.input_size[-1])])
             data = augment(data)
 
         # label = self.labels[idx]
