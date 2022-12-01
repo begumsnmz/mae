@@ -8,8 +8,8 @@ import torch
 from torch.utils.data import Dataset
 from torchvision import transforms
 
-from util import transformations
-from util import augmentations
+import transformations
+import augmentations
 
 
 class EEGDatasetFast(Dataset):
