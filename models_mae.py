@@ -265,7 +265,7 @@ class MaskedAutoencoderViT(nn.Module):
         return loss, imgs_hat, imgs_hat_masked
 
 
-def mae_vit_pluto_patchX_dec256d2b(**kwargs):
+def mae_vit_tiny_patchX_dec256d2b(**kwargs):
     model = MaskedAutoencoderViT(
         embed_dim=384, depth=3, num_heads=6,
         decoder_embed_dim=256, decoder_depth=2, decoder_num_heads=4,
@@ -361,7 +361,7 @@ def mae_vit_huge_patchX_dec512d8b(**kwargs):
 
 
 # set recommended archs
-mae_vit_pluto_patchX = mae_vit_pluto_patchX_dec256d2b  # decoder: 256 dim, 2 blocks
+mae_vit_tiny_patchX = mae_vit_tiny_patchX_dec256d2b  # decoder: 256 dim, 2 blocks
 mae_vit_small_patchX = mae_vit_small_patchX_dec384d4b  # decoder: 384 dim, 4 blocks
 mae_vit_medium_patchX = mae_vit_medium_patchX_dec384d4b  # decoder: 384 dim, 4 blocks
 mae_vit_big_patchX = mae_vit_big_patchX_dec384d4b  # decoder: 384 dim, 6 blocks

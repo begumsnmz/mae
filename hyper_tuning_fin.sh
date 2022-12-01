@@ -38,7 +38,7 @@ pre_batch_size=(4)
 pre_blr=(1e-3)
 
 folder="noExternal"
-subfolder=("pluto/decomposed/t15000/p8x50/m0.75/wd0.1")
+subfolder=("tiny/decomposed/t15000/p8x50/m0.75/wd0.1")
 
 output="True"
 

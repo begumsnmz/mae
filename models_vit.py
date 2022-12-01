@@ -53,7 +53,7 @@ class VisionTransformer(timm.models.vision_transformer.VisionTransformer):
         return outcome
 
 
-def vit_pluto_patchX(**kwargs):
+def vit_tiny_patchX(**kwargs):
     model = VisionTransformer(
         embed_dim=384, depth=3, num_heads=6, mlp_ratio=4, qkv_bias=True,
         norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
