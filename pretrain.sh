@@ -49,7 +49,8 @@ save_output="True"
 wandb="True"
 
 # Checkpoints
-# resume="/home/oturgut/PyTorchEEG/mae_he/mae/output/pre/moim/0.6train/10fold/decomposed/b2048/pre_moim_b"$(($batch_size*$accum_iter))"_blr"$blr_array"/checkpoint-20.pth"
+resume_from_ckpt="True"
+resume="/home/oturgut/PyTorchEEG/mae_he/mae/output/pre/noExternal/tiny/2d/t37000/p65x50/m0.75/pre_noExternal_b"$(($batch_size*$accum_iter))"_blr"$blr_array"/checkpoint-50.pth"
 
 
 for blr in "${blr_array[@]}"
@@ -67,7 +68,7 @@ do
 
             pre_data="pre_"$folder"_b"$(($batch_size*$acc_it))"_blr"$blr
 
-            subfolder="tiny/2d/t"$time_steps"/p"$patch_height"x"$pw"/m"$mask_ratio"/wd"$weight_decay
+            subfolder="tiny/2d/t"$time_steps"/p"$patch_height"x"$pw"/m"$mask_ratio
             output_dir="./output/pre/"$folder"/"$subfolder"/"$pre_data
             log_dir="./logs/pre/"$folder"/"$subfolder"/"$pre_data
         
@@ -83,6 +84,10 @@ do
 
             if [ "$save_output" = "True" ]; then
                 cmd=$cmd" --output_dir $output_dir"
+            fi
+
+            if [ "$resume_from_ckpt" = "True" ]; then
+                cmd=$cmd" --resume $resume"
             fi
 
             echo $cmd && $cmd
