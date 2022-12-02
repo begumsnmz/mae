@@ -46,6 +46,7 @@ from util.dataset import EEGDatasetFast
 
 def get_args_parser():
     parser = argparse.ArgumentParser('MAE pre-training', add_help=False)
+    # Basic parameters
     parser.add_argument('--batch_size', default=64, type=int,
                         help='Batch size per GPU (effective batch size is batch_size * accum_iter * # gpus')
     parser.add_argument('--epochs', default=400, type=int)
@@ -72,13 +73,13 @@ def get_args_parser():
     parser.add_argument('--patch_size', default=(65, 200), type=Tuple,
                         help='patch size')
 
+    parser.add_argument('--norm_pix_loss', action='store_true', default=False,
+                        help='Use (per-patch) normalized pixels as targets for computing loss')
+
+    # Augmentation parameters
     parser.add_argument('--mask_ratio', default=0.75, type=float,
                         help='Masking ratio (percentage of removed patches).')
 
-    parser.add_argument('--norm_pix_loss', action='store_true', default=False,
-                        help='Use (per-patch) normalized pixels as targets for computing loss')
-                        
-    # Augmentation parameters
     parser.add_argument('--jitter_sigma', default=0.03, type=float,
                         help='Jitter sigma N(0, sigma) (default: 0.1)')
     parser.add_argument('--rescaling_sigma', default=0.1, type=float,
@@ -105,10 +106,15 @@ def get_args_parser():
                         help='epochs to warmup LR')
 
     # Dataset parameters
-    parser.add_argument('--data_path', default='data_8fold_decomposed_2d_all.pt', type=str,
+    parser.add_argument('--data_path', default='_.pt', type=str,
                         help='dataset path')
-    parser.add_argument('--labels_path', default='labels_2classes_8fold_decomposed_2d_fs200.pt', type=str,
+    parser.add_argument('--labels_path', default='_.pt', type=str,
                         help='labels path')
+
+    parser.add_argument('--transfer_data_path', default='', type=str,
+                        help='transfer learning dataset path (leave empty for no transfer learning)')
+    parser.add_argument('--transfer_labels_path', default='', type=str,
+                        help='transfer learning labels path (leave empty for no transfer learning)')
 
     parser.add_argument('--output_dir', default='',
                         help='path where to save, empty for no saving')
@@ -128,19 +134,13 @@ def get_args_parser():
                         help='Pin CPU memory in DataLoader for more efficient (sometimes) transfer to GPU.')
     parser.add_argument('--no_pin_mem', action='store_false', dest='pin_mem')
 
-    # distributed training parameters
+    # Distributed training parameters
     parser.add_argument('--world_size', default=1, type=int,
                         help='number of distributed processes')
     parser.add_argument('--local_rank', default=-1, type=int)
     parser.add_argument('--dist_on_itp', action='store_true')
     parser.add_argument('--dist_url', default='env://',
                         help='url used to set up distributed training')
-
-    parser.add_argument('--transfer_learning', action='store_true', default=False)
-    parser.add_argument('--transfer_data_path', default='data_SEED_decomposed_2d_fs200.pt', type=str,
-                        help='transfer learning dataset path')
-    parser.add_argument('--transfer_labels_path', default='labels_2classes_SEED_fs200.pt', type=str,
-                        help='transfer learning labels path')
 
     return parser
 
@@ -164,15 +164,13 @@ def main(args):
     cudnn.benchmark = True
 
     # load data
-    dataset_mri = EEGDatasetFast(augment=True, args=args)
-    dataset_mri_train = Subset(dataset_mri, list(range(int(0*1), int(132*1))))
-    # dataset_mri_train = Subset(dataset_mri, list(range(int(0*1), int(138*1))))
+    dataset_d_train = EEGDatasetFast(augment=True, args=args)
+    dataset_d_train_sub = Subset(dataset_d_train, list(range(int(0*1), int(132*1))))
 
-    if args.transfer_learning == True:
+    if args.transfer_data_path:
         # GENERAL
         dataset_external = EEGDatasetFast(augment=True, transfer=True, args=args)
-        # dataset_external_sub = Subset(dataset_external, list(range(0, 2)))
-        dataset_train = ConcatDataset([dataset_mri_train, dataset_external])
+        dataset_train = ConcatDataset([dataset_d_train_sub, dataset_external])
 
         # # SEED
         # args.data_path = "/home/oturgut/PyTorchEEG/data/preprocessed/data_SEED_decomposed_ideal_fs200.pt"
@@ -199,13 +197,25 @@ def main(args):
         # dataset_lemon_eo = EEGDatasetFast(augment=True, args=args)
         # dataset_train = ConcatDataset([dataset_mri_train, dataset_lemon_ec, dataset_lemon_eo])
     else:
-        dataset_train = dataset_mri_train
+        dataset_train = dataset_d_train_sub
     
-    dataset_mri_validate = EEGDatasetFast(transform=True, augment=False, args=args)
-    dataset_val = Subset(dataset_mri_validate, list(range(int(132*1), int(160*1))))
-    # dataset_val = Subset(dataset_mri, list(range(int(138*1), int(184*1))))
+    dataset_d_validation = EEGDatasetFast(transform=True, augment=False, args=args)
+    dataset_d_validation_sub = Subset(dataset_d_validation, list(range(int(132*1), int(160*1))))
+    # dataset_val = dataset_d_validation_sub
 
-    print("Dataset size: ", len(dataset_train))
+    args.data_path = "/home/oturgut/PyTorchEEG/data/preprocessed/data_HEITMANN_701515_nf_cw_bw_fs200.pt"
+    args.labels_path = "/home/oturgut/PyTorchEEG/data/preprocessed/labels_HEITMANN_701515.pt"
+
+    dataset_h_train = EEGDatasetFast(augment=True, args=args)
+    dataset_h_train_sub = Subset(dataset_h_train, list(range(int(0*1), int(27*1))))
+    dataset_train = ConcatDataset([dataset_train, dataset_h_train_sub])
+
+    dataset_h_validation = EEGDatasetFast(transform=True, augment=False, args=args)
+    dataset_h_validation_sub = Subset(dataset_h_validation, list(range(int(27*1), int(34*1))))
+    dataset_val = ConcatDataset([dataset_d_validation_sub, dataset_h_validation_sub])
+
+    print("Training set size: ", len(dataset_train))
+    print("Validation set size: ", len(dataset_val))
 
     if True:  # args.distributed:
         num_tasks = misc.get_world_size()

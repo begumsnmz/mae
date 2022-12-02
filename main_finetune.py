@@ -46,6 +46,7 @@ from torch.utils.data import Subset, ConcatDataset
 
 def get_args_parser():
     parser = argparse.ArgumentParser('MAE fine-tuning for image classification', add_help=False)
+    # Basic parameters
     parser.add_argument('--batch_size', default=64, type=int,
                         help='Batch size per GPU (effective batch size is batch_size * accum_iter * # gpus')
     parser.add_argument('--epochs', default=50, type=int)
@@ -106,14 +107,16 @@ def get_args_parser():
     parser.add_argument('--warmup_epochs', type=int, default=5, metavar='N',
                         help='epochs to warmup LR')
 
+    # Criterion parameters
+    parser.add_argument('--smoothing', type=float, default=0.1,
+                        help='Label smoothing (default: 0.1)')
+
     # Augmentation parameters
     parser.add_argument('--color_jitter', type=float, default=None, metavar='PCT',
                         help='Color jitter factor (enabled only when not using Auto/RandAug)')
     parser.add_argument('--aa', type=str, default='rand-m9-mstd0.5-inc1', metavar='NAME',
                         help='Use AutoAugment policy. "v0" or "original". " + "(default: rand-m9-mstd0.5-inc1)'),
-    parser.add_argument('--smoothing', type=float, default=0.1,
-                        help='Label smoothing (default: 0.1)')
-
+    
     # * Random Erase params
     parser.add_argument('--reprob', type=float, default=0.25, metavar='PCT',
                         help='Random erase prob (default: 0.25)')
@@ -146,9 +149,9 @@ def get_args_parser():
                         help='Use class token instead of global pool for classification')
 
     # Dataset parameters
-    parser.add_argument('--data_path', default='data_8fold_decomposed_2d_all.pt', type=str,
+    parser.add_argument('--data_path', default='_.pt', type=str,
                         help='dataset path')
-    parser.add_argument('--labels_path', default='labels_2classes_8fold_decomposed_2d_fs200.pt', type=str,
+    parser.add_argument('--labels_path', default='_.pt', type=str,
                         help='labels path')
     parser.add_argument('--nb_classes', default=2, type=int,
                         help='number of the classification types')
@@ -175,7 +178,7 @@ def get_args_parser():
                         help='Pin CPU memory in DataLoader for more efficient (sometimes) transfer to GPU.')
     parser.add_argument('--no_pin_mem', action='store_false', dest='pin_mem')
 
-    # distributed training parameters
+    # Distributed training parameters
     parser.add_argument('--world_size', default=1, type=int,
                         help='number of distributed processes')
     parser.add_argument('--local_rank', default=-1, type=int)
@@ -204,34 +207,33 @@ def main(args):
 
     cudnn.benchmark = True
 
-    dataset = EEGDatasetFast(augment=True, args=args)
-    dataset_validate = EEGDatasetFast(transform=True, augment=False, args=args)
+    dataset_d_train = EEGDatasetFast(augment=True, args=args)
+    dataset_train = Subset(dataset_d_train, list(range(int(0*1), int(132*1))))
 
-    # ### THIS IS ONLY FOR SEED
-    # class_weights = 900.0 / (3.0 * torch.Tensor([293.0, 311.0, 296.0])) # total_nb_samples / (nb_classes * samples_per_class) 
-
-    dataset_train = Subset(dataset, list(range(int(0*1), int(132*1))))
-    class_weights = 189.0 / (2.0 * torch.Tensor([88.0, 101.0])) # total_nb_samples / (nb_classes * samples_per_class)
-    # dataset_train = Subset(dataset, list(range(int(0*1), int(138*1))))
-    # class_weights = 230.0 / (2.0 * torch.Tensor([88.0, 142.0])) # total_nb_samples / (nb_classes * samples_per_class)
-    # dataset_train = ConcatDataset([Subset(dataset, list(range(int(0*1), int(92*1)))), Subset(dataset, list(range(int(138*1), int(184*1))))])
+    dataset_d_validation = EEGDatasetFast(transform=True, augment=False, args=args)
     if args.eval == False:
-        dataset_val = Subset(dataset_validate, list(range(int(132*1), int(160*1))))
-        # dataset_val = Subset(dataset_validate, list(range(int(138*1), int(184*1))))
+        dataset_val = Subset(dataset_d_validation, list(range(int(132*1), int(160*1))))
     else:
-        dataset_val = Subset(dataset_validate, list(range(int(160*1), int(189*1))))
-        # dataset_val = Subset(dataset_validate, list(range(int(184*1), int(230*1))))
+        dataset_val = Subset(dataset_d_validation, list(range(int(160*1), int(189*1))))
 
-    # ### THIS IS ONLY FOR SEED
-    # dataset_train = Subset(dataset, list(range(0, 448)))
-    # # dataset_train = ConcatDataset([Subset(dataset, list(range(0, 112))), Subset(dataset, list(range(224, 559)))])
-    # if args.eval == False:
-    #     dataset_val = Subset(dataset_validate, list(range(448, 559)))
-    # else:
-    #     dataset_val = Subset(dataset_validate, list(range(112, 559)))
+    args.data_path = "/home/oturgut/PyTorchEEG/data/preprocessed/data_HEITMANN_701515_nf_cw_bw_fs200.pt"
+    args.labels_path = "/home/oturgut/PyTorchEEG/data/preprocessed/labels_HEITMANN_701515.pt"
 
-    print("Dataset train size: ", len(dataset_train))
-    print("Dataset val size: ", len(dataset_val))
+    dataset_h_train = EEGDatasetFast(augment=True, args=args)
+    dataset_h_train_sub = Subset(dataset_h_train, list(range(int(0*1), int(27*1))))
+    dataset_train = ConcatDataset([dataset_train, dataset_h_train_sub])
+
+    dataset_h_validation = EEGDatasetFast(transform=True, augment=False, args=args)
+    if args.eval == False:
+        dataset_h_validation_sub = Subset(dataset_h_validation, list(range(int(27*1), int(34*1))))
+    else:
+        dataset_h_validation_sub = Subset(dataset_h_validation, list(range(int(34*1), int(41*1))))
+    dataset_val = ConcatDataset([dataset_val, dataset_h_validation_sub])
+    
+    class_weights = 230.0 / (2.0 * torch.Tensor([88.0, 142.0])) # total_nb_samples / (nb_classes * samples_per_class)
+
+    print("Training set size: ", len(dataset_train))
+    print("Validation set size: ", len(dataset_val))
 
     if True:  # args.distributed:
         num_tasks = misc.get_world_size()

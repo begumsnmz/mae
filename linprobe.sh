@@ -1,54 +1,97 @@
 #!/usr/bin/bash
-# linear probing
+# Linear probing
 
-# HYPERPARAMETERS
-batch_size="16"
-accum_iter="1"
-blr="3e-4"
+# Basic parameters
+batch_size=(8)
+accum_iter=(1)
 
-# FIXED PARAMETERS
-epochs="90"
-warmup_epochs="10"
+epochs="250"
+warmup_epochs="25"
 
-input_channels="5"
+# Model parameters
+input_channels="6"
 input_electrodes="65"
-time_steps="37000"
-model="vit_small_patchX"
+time_steps="55000"
+model="vit_tiny_patchX"
 
-patch_height=$input_electrodes
+patch_height="65"
 patch_width="50"
 
-weight_decay="0"
+# Augmentation parameters
+crop_lbd="0.65"
 
-data_path="/home/oturgut/PyTorchEEG/data/preprocessed/data_DINH_10fold_normalized_decomposed_fs200.pt"
-labels_path="/home/oturgut/PyTorchEEG/data/preprocessed/labels_2classes_DINH_10fold_fs200.pt"
+jitter_sigma="0.05"
+rescaling_sigma="0.5"
+ft_surr_phase_noise="0.1"
+crop_lbd="0.9"
+
+layer_decay="0.75"
+
+# Optimizer parameters
+blr=(1e-4)
+weight_decay=(0.1)
+
+# Criterion parameters
+smoothing=(0.2)
+
+# Dataset parameters
+data_path="/home/oturgut/PyTorchEEG/data/preprocessed/data_DINH_701515_nf_cw_bw_fs200.pt"
+labels_path="/home/oturgut/PyTorchEEG/data/preprocessed/labels_DINH_701515.pt"
 nb_classes="2"
 
-global_pool="False"
+global_pool="True"
 num_workers="32"
 
-pre_batch_size=(32)
-pre_blr=(1e-2)
+# Log specifications
+save_output="True"
+wandb="True"
+
+# Pretraining specifications
+pre_batch_size=(4)
+pre_blr=(1e-3)
 
 folder="noExternal"
-subfolder="decomposed/t37000/p50/m0.4/ncc"
+subfolder=("tiny/2d/t37000/p65x50/m0.75/wd0.1/crop0.9")
 
-eval="True"
+pre_data=$folder"_b"$pre_batch_size"_blr"$pre_blr
+finetune="/home/oturgut/PyTorchEEG/mae_he/mae/output/pre/"$folder"/"$subfolder"/pre_"$pre_data"/checkpoint-50.pth"
 
-for pre_bs in "${pre_batch_size[@]}"
+for bs in "${batch_size[@]}"
 do
-    pre_data=$folder"_b"$pre_bs"_blr"$pre_blr
+    for acc_it in "${accum_iter[@]}"
+    do
+        for lr in "${blr[@]}"
+        do
 
-    output_dir="./output/lin/"$folder"/"$subfolder"/lin_b"$batch_size"_blr"$blr"_"$pre_data
-    log_dir="./logs/lin/"$folder"/"$subfolder"/lin_b"$batch_size"_blr"$blr"_"$pre_data
+            for wd in "${weight_decay[@]}"
+            do
+                for smth in "${smoothing[@]}"
+                do
 
-    if [ "$eval" = "False" ]; then
-        finetune="/home/oturgut/PyTorchEEG/mae_he/mae/output/pre/"$folder"/"$subfolder"/pre_"$pre_data"/checkpoint-249.pth"
-        cmd="python3 main_linprobe.py --input_channels $input_channels --input_electrodes $input_electrodes --time_steps $time_steps --patch_height $patch_height --patch_width $patch_width --model $model --batch_size $batch_size --epochs $epochs --accum_iter $accum_iter --weight_decay $weight_decay --blr $blr --warmup_epoch $warmup_epochs --finetune $finetune --data_path $data_path --labels_path $labels_path --nb_classes $nb_classes --output_dir $output_dir --log_dir $log_dir --num_workers $num_workers"
-    else
-        resume="/home/oturgut/PyTorchEEG/mae_he/mae/output/lin/"$folder"/"$subfolder"/lin_b"$batch_size"_blr"$blr"_"$pre_data"/checkpoint-66.pth"
-        cmd="python3 main_linprobe.py --eval --resume $resume --input_channels $input_channels --input_electrodes $input_electrodes --time_steps $time_steps --patch_height $patch_height --patch_width $patch_width --model $model --batch_size $batch_size --epochs $epochs --accum_iter $accum_iter --weight_decay $weight_decay --blr $blr --warmup_epoch $warmup_epochs --data_path $data_path --labels_path $labels_path --nb_classes $nb_classes --output_dir $output_dir --log_dir $log_dir --num_workers $num_workers"
-    fi
+                    output_dir="./output/lin/"$folder"/"$subfolder"/lin_b"$(($bs*$acc_it))"_blr"$lr"_"$pre_data
+                    log_dir="./logs/lin/"$folder"/"$subfolder"/lin_b"$(($bs*$acc_it))"_blr"$lr"_"$pre_data
 
-    echo $cmd && $cmd
+                    # resume="/home/oturgut/PyTorchEEG/mae_he/mae/output/lin/"$folder"/"$subfolder"/lin_b"$bs"_blr"$lr"_"$pre_data"/checkpoint-78.pth"
+
+                    cmd="python3 main_linprobe.py --jitter_sigma $jitter_sigma --rescaling_sigma $rescaling_sigma --ft_surr_phase_noise $ft_surr_phase_noise --crop_lbd $crop_lbd --input_channels $input_channels --input_electrodes $input_electrodes --time_steps $time_steps --patch_height $patch_height --patch_width $patch_width --model $model --batch_size $bs --epochs $epochs --accum_iter $acc_it --weight_decay $wd --layer_decay $layer_decay --blr $lr --warmup_epoch $warmup_epochs --smoothing $smth --finetune $finetune --data_path $data_path --labels_path $labels_path --nb_classes $nb_classes --log_dir $log_dir --num_workers $num_workers"
+
+                    if [ "$global_pool" == "True" ]; then
+                        cmd=$cmd" --global_pool"
+                    fi
+
+                    if [ "$save_output" = "True" ]; then
+                        cmd=$cmd" --output_dir $output_dir"
+                    fi
+
+                    if [ "$wandb" = "True" ]; then
+                        cmd=$cmd" --wandb"
+                    fi
+                    
+                    echo $cmd && $cmd
+
+                done
+            done
+
+        done
+    done
 done

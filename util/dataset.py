@@ -8,8 +8,8 @@ import torch
 from torch.utils.data import Dataset
 from torchvision import transforms
 
-import transformations
-import augmentations
+import util.transformations as transformations
+import util.augmentations as augmentations
 
 
 class EEGDatasetFast(Dataset):
@@ -48,8 +48,9 @@ class EEGDatasetFast(Dataset):
         if self.augment == True:
             lower_bnd = self.args.crop_lbd * self.args.input_size[-1] / data.shape[-1]
             upper_bnd = 1.00 * self.args.input_size[-1] / data.shape[-1]
-            augment = transforms.Compose([augmentations.Jitter(sigma=0.03),
-                                          augmentations.Rescaling(sigma=0.05),
+            augment = transforms.Compose([augmentations.Jitter(sigma=self.args.jitter_sigma),
+                                          augmentations.Rescaling(sigma=self.args.rescaling_sigma),
+                                          augmentations.FTSurrogate(phase_noise_magnitude=self.args.ft_surr_phase_noise),
                                           augmentations.CropResizing(lower_bnd=lower_bnd, upper_bnd=upper_bnd, resize=True, fixed_resize_len=self.args.input_size[-1])])
             data = augment(data)
 

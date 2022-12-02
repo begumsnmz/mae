@@ -19,7 +19,7 @@ import time
 from pathlib import Path
 
 import torch
-from torch.utils.data import Subset
+from torch.utils.data import Subset, ConcatDataset
 import torch.backends.cudnn as cudnn
 from torch.utils.tensorboard import SummaryWriter
 import wandb
@@ -48,6 +48,7 @@ from util.dataset import EEGDatasetFast
 
 def get_args_parser():
     parser = argparse.ArgumentParser('MAE linear probing for image classification', add_help=False)
+    # Basic parameters
     parser.add_argument('--batch_size', default=512, type=int,
                         help='Batch size per GPU (effective batch size is batch_size * accum_iter * # gpus')
     parser.add_argument('--epochs', default=90, type=int)
@@ -103,6 +104,10 @@ def get_args_parser():
     parser.add_argument('--warmup_epochs', type=int, default=10, metavar='N',
                         help='epochs to warmup LR')
 
+    # Criterion parameters
+    parser.add_argument('--smoothing', type=float, default=0.1,
+                        help='Label smoothing (default: 0.1)')
+
     # * Finetuning params
     parser.add_argument('--finetune', default='',
                         help='finetune from checkpoint')
@@ -111,9 +116,9 @@ def get_args_parser():
                         help='Use class token instead of global pool for classification')
 
     # Dataset parameters
-    parser.add_argument('--data_path', default='data_8fold_decomposed_2d_all.pt', type=str,
+    parser.add_argument('--data_path', default='_.pt', type=str,
                         help='dataset path')
-    parser.add_argument('--labels_path', default='labels_2classes_8fold_decomposed_2d_fs200.pt', type=str,
+    parser.add_argument('--labels_path', default='_.pt', type=str,
                         help='labels path')
     parser.add_argument('--nb_classes', default=2, type=int,
                         help='number of the classification types')
@@ -140,7 +145,7 @@ def get_args_parser():
                         help='Pin CPU memory in DataLoader for more efficient (sometimes) transfer to GPU.')
     parser.add_argument('--no_pin_mem', action='store_false', dest='pin_mem')
 
-    # distributed training parameters
+    # Distributed training parameters
     parser.add_argument('--world_size', default=1, type=int,
                         help='number of distributed processes')
     parser.add_argument('--local_rank', default=-1, type=int)
@@ -183,22 +188,33 @@ def main(args):
     # dataset_train = datasets.ImageFolder(os.path.join(args.data_path, 'train'), transform=transform_train)
     # dataset_val = datasets.ImageFolder(os.path.join(args.data_path, 'val'), transform=transform_val)
 
-    dataset = EEGDatasetFast(augment=True, args=args)
-    dataset_validate = EEGDatasetFast(transform=True, augment=False, args=args)
+    dataset_d_train = EEGDatasetFast(augment=True, args=args)
+    dataset_train = Subset(dataset_d_train, list(range(int(0*1), int(132*1))))
 
-    dataset_train = Subset(dataset, list(range(int(0*1), int(132*1))))
-    class_weights = 189.0 / (2.0 * torch.Tensor([88.0, 101.0])) # total_nb_samples / (nb_classes * samples_per_class)
-    # dataset_train = Subset(dataset, list(range(int(0*1), int(138*1))))
-    # class_weights = 230.0 / (2.0 * torch.Tensor([88.0, 142.0])) # total_nb_samples / (nb_classes * samples_per_class)
+    dataset_d_validation = EEGDatasetFast(transform=True, augment=False, args=args)
     if args.eval == False:
-        dataset_val = Subset(dataset_validate, list(range(int(132*1), int(160*1))))
-        # dataset_val = Subset(dataset_validate, list(range(int(138*1), int(184*1))))
+        dataset_val = Subset(dataset_d_validation, list(range(int(132*1), int(160*1))))
     else:
-        dataset_val = Subset(dataset_validate, list(range(int(160*1), int(189*1))))
-        # dataset_val = Subset(dataset_validate, list(range(int(184*1), int(230*1))))
+        dataset_val = Subset(dataset_d_validation, list(range(int(160*1), int(189*1))))
 
-    print("Dataset train size: ", len(dataset_train))
-    print("Dataset val size: ", len(dataset_val))
+    args.data_path = "/home/oturgut/PyTorchEEG/data/preprocessed/data_HEITMANN_701515_nf_cw_bw_fs200.pt"
+    args.labels_path = "/home/oturgut/PyTorchEEG/data/preprocessed/labels_HEITMANN_701515.pt"
+
+    dataset_h_train = EEGDatasetFast(augment=True, args=args)
+    dataset_h_train_sub = Subset(dataset_h_train, list(range(int(0*1), int(27*1))))
+    dataset_train = ConcatDataset([dataset_train, dataset_h_train_sub])
+
+    dataset_h_validation = EEGDatasetFast(transform=True, augment=False, args=args)
+    if args.eval == False:
+        dataset_h_validation_sub = Subset(dataset_h_validation, list(range(int(27*1), int(34*1))))
+    else:
+        dataset_h_validation_sub = Subset(dataset_h_validation, list(range(int(34*1), int(41*1))))
+    dataset_val = ConcatDataset([dataset_val, dataset_h_validation_sub])
+    
+    class_weights = 230.0 / (2.0 * torch.Tensor([88.0, 142.0])) # total_nb_samples / (nb_classes * samples_per_class)
+
+    print("Training set size: ", len(dataset_train))
+    print("Validation set size: ", len(dataset_val))
 
     if True:  # args.distributed:
         num_tasks = misc.get_world_size()
@@ -327,7 +343,10 @@ def main(args):
     loss_scaler = NativeScaler()
 
     class_weights = class_weights.to(device=device)
-    criterion = torch.nn.CrossEntropyLoss(weight=class_weights)
+    if args.smoothing > 0.:
+        criterion = torch.nn.CrossEntropyLoss(weight=class_weights, label_smoothing=args.smoothing)
+    else:
+        criterion = torch.nn.CrossEntropyLoss(weight=class_weights)
 
     print("criterion = %s" % str(criterion))
 
