@@ -5,21 +5,20 @@
 batch_size=(8)
 accum_iter=(1)
 
-epochs="250"
-warmup_epochs="25"
+epochs="90"
+warmup_epochs="9"
 
 # Model parameters
 input_channels="6"
 input_electrodes="65"
 time_steps="55000"
-model="vit_tiny_patchX"
+model_size="tiny"
+model="vit_"$model_size"_patchX"
 
 patch_height="65"
 patch_width="50"
 
 # Augmentation parameters
-crop_lbd="0.65"
-
 jitter_sigma="0.05"
 rescaling_sigma="0.5"
 ft_surr_phase_noise="0.1"
@@ -46,12 +45,12 @@ num_workers="32"
 save_output="True"
 wandb="True"
 
+folder="noExternal"
+subfolder=($model_size"/2d/t37000/p"$patch_height"x"$patch_width"/m0.75")
+
 # Pretraining specifications
 pre_batch_size=(4)
 pre_blr=(1e-3)
-
-folder="noExternal"
-subfolder=("tiny/2d/t37000/p65x50/m0.75/wd0.1/crop0.9")
 
 pre_data=$folder"_b"$pre_batch_size"_blr"$pre_blr
 finetune="/home/oturgut/PyTorchEEG/mae_he/mae/output/pre/"$folder"/"$subfolder"/pre_"$pre_data"/checkpoint-50.pth"
@@ -79,12 +78,12 @@ do
                         cmd=$cmd" --global_pool"
                     fi
 
-                    if [ "$save_output" = "True" ]; then
-                        cmd=$cmd" --output_dir $output_dir"
-                    fi
-
                     if [ "$wandb" = "True" ]; then
                         cmd=$cmd" --wandb"
+                    fi
+
+                    if [ "$save_output" = "True" ]; then
+                        cmd=$cmd" --output_dir $output_dir"
                     fi
                     
                     echo $cmd && $cmd

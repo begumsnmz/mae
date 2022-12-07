@@ -88,6 +88,11 @@ def get_args_parser():
     parser.add_argument('--crop_lbd', default=1.0, type=float,
                         help='lower bound for cropping (data augmentation')
 
+    parser.add_argument('--color_jitter', type=float, default=None, metavar='PCT',
+                        help='Color jitter factor (enabled only when not using Auto/RandAug)')
+    parser.add_argument('--aa', type=str, default='rand-m9-mstd0.5-inc1', metavar='NAME',
+                        help='Use AutoAugment policy. "v0" or "original". " + "(default: rand-m9-mstd0.5-inc1)')
+
     # Optimizer parameters
     parser.add_argument('--clip_grad', type=float, default=None, metavar='NORM',
                         help='Clip gradient norm (default: None, no clipping)')
@@ -110,12 +115,6 @@ def get_args_parser():
     # Criterion parameters
     parser.add_argument('--smoothing', type=float, default=0.1,
                         help='Label smoothing (default: 0.1)')
-
-    # Augmentation parameters
-    parser.add_argument('--color_jitter', type=float, default=None, metavar='PCT',
-                        help='Color jitter factor (enabled only when not using Auto/RandAug)')
-    parser.add_argument('--aa', type=str, default='rand-m9-mstd0.5-inc1', metavar='NAME',
-                        help='Use AutoAugment policy. "v0" or "original". " + "(default: rand-m9-mstd0.5-inc1)'),
     
     # * Random Erase params
     parser.add_argument('--reprob', type=float, default=0.25, metavar='PCT',
@@ -216,7 +215,7 @@ def main(args):
     else:
         dataset_val = Subset(dataset_d_validation, list(range(int(160*1), int(189*1))))
 
-    args.data_path = "/home/oturgut/PyTorchEEG/data/preprocessed/data_HEITMANN_701515_nf_cw_bw_fs200.pt"
+    args.data_path = "/home/oturgut/PyTorchEEG/data/preprocessed/data_HEITMANN_701515_nf_cw_id_fs200.pt"
     args.labels_path = "/home/oturgut/PyTorchEEG/data/preprocessed/labels_HEITMANN_701515.pt"
 
     dataset_h_train = EEGDatasetFast(augment=True, args=args)

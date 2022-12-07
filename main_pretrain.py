@@ -201,7 +201,7 @@ def main(args):
     
     dataset_d_validation = EEGDatasetFast(transform=True, augment=False, args=args)
     dataset_d_validation_sub = Subset(dataset_d_validation, list(range(int(132*1), int(160*1))))
-    # dataset_val = dataset_d_validation_sub
+    dataset_val = dataset_d_validation_sub
 
     args.data_path = "/home/oturgut/PyTorchEEG/data/preprocessed/data_HEITMANN_701515_nf_cw_bw_fs200.pt"
     args.labels_path = "/home/oturgut/PyTorchEEG/data/preprocessed/labels_HEITMANN_701515.pt"

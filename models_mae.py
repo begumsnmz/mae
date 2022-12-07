@@ -248,8 +248,8 @@ class MaskedAutoencoderViT(nn.Module):
         reg_weight = 0.10
         loss = loss.mean()
 
-        return (1-reg_weight)*loss_patches + reg_weight*(1-ncc)
-        # return (1-reg_weight)*loss + reg_weight*(1-ncc)
+        # return (1-reg_weight)*loss_patches + reg_weight*(1-ncc)
+        return (1-reg_weight)*loss + reg_weight*(1-ncc)
 
 
     def forward(self, imgs, mask_ratio=0.75):

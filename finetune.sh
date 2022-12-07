@@ -2,26 +2,25 @@
 # Fine tuning 
 
 # Basic parameters
-batch_size=(8)
-accum_iter=(1)
+batch_size=(1)
+accum_iter=(8)
 
-epochs="250"
-warmup_epochs="25"
+epochs="100"
+warmup_epochs="10"
 
 # Model parameters
 input_channels="6"
 input_electrodes="65"
-time_steps="55000"
-model="vit_tiny_patchX"
+time_steps="37000"
+model_size="small"
+model="vit_"$model_size"_patchX"
 
-patch_height="65"
+patch_height="5"
 patch_width="50"
 
 # Augmentation parameters
-crop_lbd="0.65"
-
 jitter_sigma="0.05"
-rescaling_sigma="0.5"
+rescaling_sigma="0.1"
 ft_surr_phase_noise="0.1"
 crop_lbd="0.9"
 
@@ -29,33 +28,39 @@ drop_path=(0.1)
 layer_decay="0.75"
 
 # Optimizer parameters
-blr=(1e-4)
+blr=(3e-4)
 weight_decay=(0.1)
 
 # Criterion parameters
 smoothing=(0.2)
 
 # Dataset parameters
-data_path="/home/oturgut/PyTorchEEG/data/preprocessed/data_DINH_701515_nf_cw_bw_fs200.pt"
+data_path="/home/oturgut/PyTorchEEG/data/preprocessed/data_DINH_701515_nf_cw_id_fs200.pt"
 labels_path="/home/oturgut/PyTorchEEG/data/preprocessed/labels_DINH_701515.pt"
 nb_classes="2"
 
-global_pool="True"
+global_pool="False"
 num_workers="32"
 
 # Log specifications
 save_output="True"
 wandb="True"
 
+folder="noExternal"
+subfolder=(""$model_size"/2d/t20000/p"$patch_height"x"$patch_width"/m0.75")
+
 # Pretraining specifications
 pre_batch_size=(4)
 pre_blr=(1e-3)
 
-folder="noExternal"
-subfolder=("tiny/2d/t37000/p65x50/m0.75/wd0.1/crop0.9")
-
 pre_data=$folder"_b"$pre_batch_size"_blr"$pre_blr
-finetune="/home/oturgut/PyTorchEEG/mae_he/mae/output/pre/"$folder"/"$subfolder"/pre_"$pre_data"/checkpoint-50.pth"
+finetune="/home/oturgut/PyTorchEEG/mae_he/mae/output/pre/"$folder"/"$subfolder"/pre_"$pre_data"/checkpoint-749.pth"
+
+# EVALUATE
+eval="False"
+# As filename: State the checkpoint for the inference of a specific model
+# or state the (final) epoch for the inference of all models up to this epoch
+resume="/home/oturgut/PyTorchEEG/mae_he/mae/output/fin/"$folder"/id/"$subfolder"/fin_b"$(($batch_size*$accum_iter))"_blr"$blr"_"$pre_data"/checkpoint-89.pth"
 
 for bs in "${batch_size[@]}"
 do
@@ -71,8 +76,8 @@ do
                     for smth in "${smoothing[@]}"
                     do
 
-                        output_dir="./output/fin/"$folder"/"$subfolder"/fin_b"$(($bs*$acc_it))"_blr"$lr"_"$pre_data
-                        log_dir="./logs/fin/"$folder"/"$subfolder"/fin_b"$(($bs*$acc_it))"_blr"$lr"_"$pre_data
+                        output_dir="./output/fin/"$folder"/id/"$subfolder"/fin_b"$(($bs*$acc_it))"_blr"$lr"_"$pre_data
+                        log_dir="./logs/fin/"$folder"/id/"$subfolder"/fin_b"$(($bs*$acc_it))"_blr"$lr"_"$pre_data
 
                         # resume="/home/oturgut/PyTorchEEG/mae_he/mae/output/fin/"$folder"/"$subfolder"/fin_b"$bs"_blr"$lr"_"$pre_data"/checkpoint-78.pth"
 
@@ -82,12 +87,16 @@ do
                             cmd=$cmd" --global_pool"
                         fi
 
+                        if [ "$wandb" = "True" ]; then
+                            cmd=$cmd" --wandb"
+                        fi
+
                         if [ "$save_output" = "True" ]; then
                             cmd=$cmd" --output_dir $output_dir"
                         fi
 
-                        if [ "$wandb" = "True" ]; then
-                            cmd=$cmd" --wandb"
+                        if [ "$eval" = "True" ]; then
+                            cmd=$cmd" --eval --resume $resume"
                         fi
                         
                         echo $cmd && $cmd

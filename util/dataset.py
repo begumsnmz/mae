@@ -50,8 +50,11 @@ class EEGDatasetFast(Dataset):
             upper_bnd = 1.00 * self.args.input_size[-1] / data.shape[-1]
             augment = transforms.Compose([augmentations.Jitter(sigma=self.args.jitter_sigma),
                                           augmentations.Rescaling(sigma=self.args.rescaling_sigma),
-                                          augmentations.FTSurrogate(phase_noise_magnitude=self.args.ft_surr_phase_noise),
-                                          augmentations.CropResizing(lower_bnd=lower_bnd, upper_bnd=upper_bnd, resize=True, fixed_resize_len=self.args.input_size[-1])])
+                                          augmentations.FTSurrogate(phase_noise_magnitude=self.args.ft_surr_phase_noise, prob=0.5),
+                                          augmentations.CropResizing(lower_bnd=lower_bnd, upper_bnd=upper_bnd, resize=True, fixed_resize_len=self.args.input_size[-1]),
+                                          #augmentations.TimeFlip(prob=0.33),
+                                          #augmentations.SignFlip(prob=0.33)
+                                          ])
             data = augment(data)
 
         # label = self.labels[idx]
