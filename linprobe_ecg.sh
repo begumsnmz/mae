@@ -2,7 +2,7 @@
 # Linear probing
 
 # Basic parameters
-batch_size=(128)
+batch_size=(512)
 accum_iter=(4)
 
 epochs="90"

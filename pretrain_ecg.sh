@@ -8,7 +8,7 @@ if [ "$external" = "on" ]; then
     batch_size="32"
     accum_iter=(4)
 else
-    batch_size="128"
+    batch_size="64"
     accum_iter=(1)
 fi
 epochs="400"
@@ -22,7 +22,9 @@ model_size="tiny"
 model="mae_vit_"$model_size"_patchX"
 
 patch_height="1"
-patch_width=(100)
+patch_width=(50)
+
+norm_pix_loss="False"
 
 # Augmentation parameters
 mask_ratio="0.75"
@@ -76,6 +78,10 @@ do
             
             if [ "$external" = "on" ]; then
                 cmd=$cmd" --transfer_data_path $transfer_data_path --transfer_labels_path $transfer_labels_path"
+            fi
+
+            if [ "$norm_pix_loss" = "True" ]; then
+                cmd=$cmd" --norm_pix_loss"
             fi
 
             if [ "$wandb" = "True" ]; then

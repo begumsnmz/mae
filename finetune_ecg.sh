@@ -12,7 +12,7 @@ warmup_epochs="5"
 input_channels="1"
 input_electrodes="12"
 time_steps="5000"
-model_size="small"
+model_size="tiny"
 model="vit_"$model_size"_patchX"
 
 patch_height="1"
@@ -75,12 +75,12 @@ do
                     for smth in "${smoothing[@]}"
                     do
 
-                        output_dir="./output/fin/"$folder"/id/"$subfolder"/fin_b"$(($bs*$acc_it))"_blr"$lr"_"$pre_data
-                        log_dir="./logs/fin/"$folder"/id/"$subfolder"/fin_b"$(($bs*$acc_it))"_blr"$lr"_"$pre_data
+                        output_dir="./output/fin/"$folder"/"$subfolder"/fin_b"$(($bs*$acc_it))"_blr"$lr"_"$pre_data
+                        log_dir="./logs/fin/"$folder"/"$subfolder"/fin_b"$(($bs*$acc_it))"_blr"$lr"_"$pre_data
 
                         # resume="/home/oturgut/sprai/mae_he/mae/output/fin/"$folder"/"$subfolder"/fin_b"$bs"_blr"$lr"_"$pre_data"/checkpoint-78.pth"
 
-                        cmd="python3 main_finetune.py --jitter_sigma $jitter_sigma --rescaling_sigma $rescaling_sigma --ft_surr_phase_noise $ft_surr_phase_noise --input_channels $input_channels --input_electrodes $input_electrodes --time_steps $time_steps --patch_height $patch_height --patch_width $patch_width --model $model --batch_size $bs --epochs $epochs --accum_iter $acc_it --drop_path $dp --weight_decay $wd --layer_decay $layer_decay --blr $lr --warmup_epoch $warmup_epochs --smoothing $smth --finetune $finetune --data_path $data_path --labels_path $labels_path --nb_classes $nb_classes --log_dir $log_dir --num_workers $num_workers"
+                        cmd="python3 main_finetune.py --finetune $finetune --jitter_sigma $jitter_sigma --rescaling_sigma $rescaling_sigma --ft_surr_phase_noise $ft_surr_phase_noise --input_channels $input_channels --input_electrodes $input_electrodes --time_steps $time_steps --patch_height $patch_height --patch_width $patch_width --model $model --batch_size $bs --epochs $epochs --accum_iter $acc_it --drop_path $dp --weight_decay $wd --layer_decay $layer_decay --blr $lr --warmup_epoch $warmup_epochs --smoothing $smth --data_path $data_path --labels_path $labels_path --nb_classes $nb_classes --log_dir $log_dir --num_workers $num_workers"
 
                         if [ "$global_pool" == "True" ]; then
                             cmd=$cmd" --global_pool"
