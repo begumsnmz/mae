@@ -41,7 +41,7 @@ import models_mae
 
 from engine_pretrain import train_one_epoch, evaluate
 
-from util.dataset import EEGDatasetFast
+from util.dataset import SignalDataset
 
 
 def get_args_parser():
@@ -80,16 +80,14 @@ def get_args_parser():
     parser.add_argument('--mask_ratio', default=0.75, type=float,
                         help='Masking ratio (percentage of removed patches).')
 
-    parser.add_argument('--jitter_sigma', default=0.03, type=float,
-                        help='Jitter sigma N(0, sigma) (default: 0.1)')
-    parser.add_argument('--rescaling_sigma', default=0.1, type=float,
-                        help='Rescaling sigma N(0, sigma) (default: 0.1)')
-    parser.add_argument('--ft_surr_phase_noise', default=0.1, type=float,
-                        help='Phase noise magnitude (default: 0.1)')
+    parser.add_argument('--jitter_sigma', default=0.2, type=float,
+                        help='Jitter sigma N(0, sigma) (default: 0.2)')
+    parser.add_argument('--rescaling_sigma', default=0.5, type=float,
+                        help='Rescaling sigma N(0, sigma) (default: 0.5)')
+    parser.add_argument('--ft_surr_phase_noise', default=0.075, type=float,
+                        help='Phase noise magnitude (default: 0.075)')
     parser.add_argument('--freq_shift_delta', default=0.005, type=float,
                         help='Delta for the frequency shift (default: 0.005)')
-    parser.add_argument('--crop_lbd', default=1.0, type=float,
-                        help='lower bound for cropping (data augmentation')
 
     # Optimizer parameters
     parser.add_argument('--weight_decay', type=float, default=0.05,
@@ -164,55 +162,60 @@ def main(args):
     cudnn.benchmark = True
 
     # load data
-    dataset_d_train = EEGDatasetFast(augment=True, args=args)
-    dataset_d_train_sub = Subset(dataset_d_train, list(range(int(0*1), int(132*1))))
+    # dataset_d_train = SignalDataset(augment=True, args=args)
+    # dataset_d_train_sub = Subset(dataset_d_train, list(range(int(0*1), int(132*1))))
 
-    if args.transfer_data_path:
-        # GENERAL
-        dataset_external = EEGDatasetFast(augment=True, transfer=True, args=args)
-        dataset_train = ConcatDataset([dataset_d_train_sub, dataset_external])
+    # if args.transfer_data_path:
+    #     # GENERAL
+    #     dataset_external = SignalDataset(augment=True, transfer=True, args=args)
+    #     dataset_train = ConcatDataset([dataset_d_train_sub, dataset_external])
 
-        # # SEED
-        # args.data_path = "/home/oturgut/PyTorchEEG/data/preprocessed/data_SEED_decomposed_ideal_fs200.pt"
-        # args.labels_path = "/home/oturgut/PyTorchEEG/data/preprocessed/labels_3classes_SEED_fs200.pt"
-        # dataset_seed = EEGDatasetFast(augment=True, args=args)
-        # # dataset_seed = Subset(dataset_seed, list(range(0, 448)))
-        # # dataset_seed = ConcatDataset([Subset(dataset_seed, list(range(0, 112))), Subset(dataset_seed, list(range(224, 559)))])
-        # # dataset_train = dataset_seed
-        # dataset_train = ConcatDataset([dataset_mri_train, dataset_seed])
+    #     # # SEED
+    #     # args.data_path = "/home/oturgut/sprai/data/preprocessed/data_SEED_decomposed_ideal_fs200.pt"
+    #     # args.labels_path = "/home/oturgut/sprai/data/preprocessed/labels_3classes_SEED_fs200.pt"
+    #     # dataset_seed = SignalDataset(augment=True, args=args)
+    #     # # dataset_seed = Subset(dataset_seed, list(range(0, 448)))
+    #     # # dataset_seed = ConcatDataset([Subset(dataset_seed, list(range(0, 112))), Subset(dataset_seed, list(range(224, 559)))])
+    #     # # dataset_train = dataset_seed
+    #     # dataset_train = ConcatDataset([dataset_mri_train, dataset_seed])
 
-        # # MOIM
-        # args.data_path = "/home/oturgut/PyTorchEEG/data/preprocessed/data_MOIM_snippets60s_decomposed_ideal_fs200.pt"
-        # args.labels_path = "/home/oturgut/PyTorchEEG/data/preprocessed/labels_2classes_MOIM_snippets60s_fs200.pt"
-        # dataset_moim = EEGDatasetFast(augment=True, args=args)
-        # dataset_train = ConcatDataset([dataset_mri_train, dataset_moim])
+    #     # # MOIM
+    #     # args.data_path = "/home/oturgut/sprai/data/preprocessed/data_MOIM_snippets60s_decomposed_ideal_fs200.pt"
+    #     # args.labels_path = "/home/oturgut/sprai/data/preprocessed/labels_2classes_MOIM_snippets60s_fs200.pt"
+    #     # dataset_moim = SignalDataset(augment=True, args=args)
+    #     # dataset_train = ConcatDataset([dataset_mri_train, dataset_moim])
 
-        # # LEMON
-        # args.data_path = "/home/oturgut/PyTorchEEG/data/preprocessed/data_LEMON_ec_decomposed_2d_fs200.pt"
-        # args.labels_path = "/home/oturgut/PyTorchEEG/data/preprocessed/labels_2classes_LEMON_fs200.pt"
-        # dataset_lemon_ec = EEGDatasetFast(augment=True, args=args)
+    #     # # LEMON
+    #     # args.data_path = "/home/oturgut/sprai/data/preprocessed/data_LEMON_ec_decomposed_2d_fs200.pt"
+    #     # args.labels_path = "/home/oturgut/sprai/data/preprocessed/labels_2classes_LEMON_fs200.pt"
+    #     # dataset_lemon_ec = SignalDataset(augment=True, args=args)
 
-        # args.data_path = "/home/oturgut/PyTorchEEG/data/preprocessed/data_LEMON_eo_decomposed_2d_fs200.pt"
-        # args.labels_path = "/home/oturgut/PyTorchEEG/data/preprocessed/labels_2classes_LEMON_fs200.pt"
-        # dataset_lemon_eo = EEGDatasetFast(augment=True, args=args)
-        # dataset_train = ConcatDataset([dataset_mri_train, dataset_lemon_ec, dataset_lemon_eo])
-    else:
-        dataset_train = dataset_d_train_sub
+    #     # args.data_path = "/home/oturgut/sprai/data/preprocessed/data_LEMON_eo_decomposed_2d_fs200.pt"
+    #     # args.labels_path = "/home/oturgut/sprai/data/preprocessed/labels_2classes_LEMON_fs200.pt"
+    #     # dataset_lemon_eo = SignalDataset(augment=True, args=args)
+    #     # dataset_train = ConcatDataset([dataset_mri_train, dataset_lemon_ec, dataset_lemon_eo])
+    # else:
+    #     dataset_train = dataset_d_train_sub
     
-    dataset_d_validation = EEGDatasetFast(transform=True, augment=False, args=args)
-    dataset_d_validation_sub = Subset(dataset_d_validation, list(range(int(132*1), int(160*1))))
-    dataset_val = dataset_d_validation_sub
+    # dataset_d_validation = SignalDataset(transform=True, augment=False, args=args)
+    # dataset_d_validation_sub = Subset(dataset_d_validation, list(range(int(132*1), int(160*1))))
+    # dataset_val = dataset_d_validation_sub
 
-    args.data_path = "/home/oturgut/PyTorchEEG/data/preprocessed/data_HEITMANN_701515_nf_cw_bw_fs200.pt"
-    args.labels_path = "/home/oturgut/PyTorchEEG/data/preprocessed/labels_HEITMANN_701515.pt"
+    # args.data_path = "/home/oturgut/sprai/data/preprocessed/data_HEITMANN_701515_nf_cw_bw_fs200.pt"
+    # args.labels_path = "/home/oturgut/sprai/data/preprocessed/labels_HEITMANN_701515.pt"
 
-    dataset_h_train = EEGDatasetFast(augment=True, args=args)
-    dataset_h_train_sub = Subset(dataset_h_train, list(range(int(0*1), int(27*1))))
-    dataset_train = ConcatDataset([dataset_train, dataset_h_train_sub])
+    # dataset_h_train = SignalDataset(augment=True, args=args)
+    # dataset_h_train_sub = Subset(dataset_h_train, list(range(int(0*1), int(27*1))))
+    # dataset_train = ConcatDataset([dataset_train, dataset_h_train_sub])
 
-    dataset_h_validation = EEGDatasetFast(transform=True, augment=False, args=args)
-    dataset_h_validation_sub = Subset(dataset_h_validation, list(range(int(27*1), int(34*1))))
-    dataset_val = ConcatDataset([dataset_d_validation_sub, dataset_h_validation_sub])
+    # dataset_h_validation = SignalDataset(transform=True, augment=False, args=args)
+    # dataset_h_validation_sub = Subset(dataset_h_validation, list(range(int(27*1), int(34*1))))
+    # dataset_val = ConcatDataset([dataset_d_validation_sub, dataset_h_validation_sub])
+
+    dataset_train = SignalDataset(augment=True, args=args)
+    args.data_path = "/home/oturgut/sprai/data/preprocessed/ecg/data_val_CAD_noBase_gn.pt"
+    args.labels_path = "/home/oturgut/sprai/data/preprocessed/ecg/labels_val_CAD.pt"
+    dataset_val = SignalDataset(transform=True, augment=False, args=args)
 
     print("Training set size: ", len(dataset_train))
     print("Validation set size: ", len(dataset_val))
@@ -234,7 +237,7 @@ def main(args):
 
         if args.wandb == True:
             config = vars(args)
-            wandb.init(project="MAE_He", config=config, entity="oturgut")
+            wandb.init(project="MAE_ECG", config=config, entity="oturgut")
     else:
         log_writer = None
 

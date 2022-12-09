@@ -29,8 +29,8 @@ weight_decay=(0.1)
 smoothing=(0.2)
 
 # Dataset parameters
-data_path="/home/oturgut/PyTorchEEG/data/preprocessed/data_DINH_701515_nf_cw_bw_fs200.pt"
-labels_path="/home/oturgut/PyTorchEEG/data/preprocessed/labels_DINH_701515.pt"
+data_path="/home/oturgut/sprai/data/preprocessed/data_DINH_701515_nf_cw_bw_fs200.pt"
+labels_path="/home/oturgut/sprai/data/preprocessed/labels_DINH_701515.pt"
 nb_classes="2"
 
 global_pool="True"
@@ -52,7 +52,7 @@ log_dir="./logs/lin/"$folder"/"$subfolder"/lin_b"$(($batch_size*$accum_iter))"_b
 
 # As filename: State the checkpoint for the inference of a specific model
 # or state the (final) epoch for the inference of all models up to this epoch
-resume="/home/oturgut/PyTorchEEG/mae_he/mae/output/lin/"$folder"/"$subfolder"/wd0.1/smth0.2/lin_b"$(($batch_size*$accum_iter))"_blr"$blr"_"$pre_data"/checkpoint-1.pth"
+resume="/home/oturgut/sprai/mae_he/mae/output/lin/"$folder"/"$subfolder"/wd0.1/smth0.2/lin_b"$(($batch_size*$accum_iter))"_blr"$blr"_"$pre_data"/checkpoint-1.pth"
 cmd="python3 main_linprobe.py --eval --resume $resume --input_channels $input_channels --input_electrodes $input_electrodes --time_steps $time_steps --patch_height $patch_height --patch_width $patch_width --model $model --batch_size $batch_size --epochs $epochs --accum_iter $accum_iter --weight_decay $weight_decay --layer_decay $layer_decay --blr $blr --warmup_epoch $warmup_epochs --smoothing $smoothing --data_path $data_path --labels_path $labels_path --nb_classes $nb_classes --log_dir $log_dir --num_workers $num_workers"
 
 if [ "$global_pool" == "True" ]; then

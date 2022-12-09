@@ -26,6 +26,21 @@ class Normalization(object):
             mean = torch.mean(sample, dim=-1, keepdim=True)
             var = torch.var(sample, dim=-1, keepdim=True)
 
+        elif self.mode == "group_wise":
+            mean = torch.Tensor()
+            var = torch.Tensor()
+
+            lower_bound = 0
+            for idx in self.groups:
+                mean_group = torch.mean(sample[lower_bound:idx], dim=(0, 1), keepdim=True)
+                mean_group = mean_group.repeat(int(idx-lower_bound), 1)
+                var_group = torch.var(sample[lower_bound:idx], dim=(0, 1), keepdim=True)
+                var_group = var_group.repeat(int(idx-lower_bound), 1)
+                lower_bound = idx
+
+                mean = torch.cat((mean, mean_group), dim=0)
+                var = torch.cat((var, var_group), dim=0)
+
         normalized_sample = (sample - mean) / (var + 1.e-12)**.5
 
         return normalized_sample

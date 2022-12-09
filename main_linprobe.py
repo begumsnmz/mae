@@ -43,7 +43,7 @@ import models_vit
 
 from engine_finetune import train_one_epoch, evaluate
 
-from util.dataset import EEGDatasetFast
+from util.dataset import SignalDataset
 
 
 def get_args_parser():
@@ -76,16 +76,14 @@ def get_args_parser():
                         help='patch size')
                         
     # Augmentation parameters
-    parser.add_argument('--jitter_sigma', default=0.03, type=float,
-                        help='Jitter sigma N(0, sigma) (default: 0.1)')
-    parser.add_argument('--rescaling_sigma', default=0.1, type=float,
-                        help='Rescaling sigma N(0, sigma) (default: 0.1)')
-    parser.add_argument('--ft_surr_phase_noise', default=0.1, type=float,
-                        help='Phase noise magnitude (default: 0.1)')
+    parser.add_argument('--jitter_sigma', default=0.2, type=float,
+                        help='Jitter sigma N(0, sigma) (default: 0.2)')
+    parser.add_argument('--rescaling_sigma', default=0.5, type=float,
+                        help='Rescaling sigma N(0, sigma) (default: 0.5)')
+    parser.add_argument('--ft_surr_phase_noise', default=0.075, type=float,
+                        help='Phase noise magnitude (default: 0.075)')
     parser.add_argument('--freq_shift_delta', default=0.005, type=float,
                         help='Delta for the frequency shift (default: 0.005)')
-    parser.add_argument('--crop_lbd', default=1.0, type=float,
-                        help='lower bound for cropping (data augmentation')
 
     # Optimizer parameters
     parser.add_argument('--weight_decay', type=float, default=0,
@@ -188,30 +186,35 @@ def main(args):
     # dataset_train = datasets.ImageFolder(os.path.join(args.data_path, 'train'), transform=transform_train)
     # dataset_val = datasets.ImageFolder(os.path.join(args.data_path, 'val'), transform=transform_val)
 
-    dataset_d_train = EEGDatasetFast(augment=True, args=args)
-    dataset_train = Subset(dataset_d_train, list(range(int(0*1), int(132*1))))
+    # dataset_d_train = EEGDatasetFast(augment=True, args=args)
+    # dataset_train = Subset(dataset_d_train, list(range(int(0*1), int(132*1))))
 
-    dataset_d_validation = EEGDatasetFast(transform=True, augment=False, args=args)
-    if args.eval == False:
-        dataset_val = Subset(dataset_d_validation, list(range(int(132*1), int(160*1))))
-    else:
-        dataset_val = Subset(dataset_d_validation, list(range(int(160*1), int(189*1))))
+    # dataset_d_validation = EEGDatasetFast(transform=True, augment=False, args=args)
+    # if args.eval == False:
+    #     dataset_val = Subset(dataset_d_validation, list(range(int(132*1), int(160*1))))
+    # else:
+    #     dataset_val = Subset(dataset_d_validation, list(range(int(160*1), int(189*1))))
 
-    args.data_path = "/home/oturgut/PyTorchEEG/data/preprocessed/data_HEITMANN_701515_nf_cw_bw_fs200.pt"
-    args.labels_path = "/home/oturgut/PyTorchEEG/data/preprocessed/labels_HEITMANN_701515.pt"
+    # args.data_path = "/home/oturgut/PyTorchEEG/data/preprocessed/data_HEITMANN_701515_nf_cw_bw_fs200.pt"
+    # args.labels_path = "/home/oturgut/PyTorchEEG/data/preprocessed/labels_HEITMANN_701515.pt"
 
-    dataset_h_train = EEGDatasetFast(augment=True, args=args)
-    dataset_h_train_sub = Subset(dataset_h_train, list(range(int(0*1), int(27*1))))
-    dataset_train = ConcatDataset([dataset_train, dataset_h_train_sub])
+    # dataset_h_train = EEGDatasetFast(augment=True, args=args)
+    # dataset_h_train_sub = Subset(dataset_h_train, list(range(int(0*1), int(27*1))))
+    # dataset_train = ConcatDataset([dataset_train, dataset_h_train_sub])
 
-    dataset_h_validation = EEGDatasetFast(transform=True, augment=False, args=args)
-    if args.eval == False:
-        dataset_h_validation_sub = Subset(dataset_h_validation, list(range(int(27*1), int(34*1))))
-    else:
-        dataset_h_validation_sub = Subset(dataset_h_validation, list(range(int(34*1), int(41*1))))
-    dataset_val = ConcatDataset([dataset_val, dataset_h_validation_sub])
-    
-    class_weights = 230.0 / (2.0 * torch.Tensor([88.0, 142.0])) # total_nb_samples / (nb_classes * samples_per_class)
+    # dataset_h_validation = EEGDatasetFast(transform=True, augment=False, args=args)
+    # if args.eval == False:
+    #     dataset_h_validation_sub = Subset(dataset_h_validation, list(range(int(27*1), int(34*1))))
+    # else:
+    #     dataset_h_validation_sub = Subset(dataset_h_validation, list(range(int(34*1), int(41*1))))
+    # dataset_val = ConcatDataset([dataset_val, dataset_h_validation_sub])
+        
+    dataset_train = SignalDataset(augment=True, args=args)
+    args.data_path = "/home/oturgut/sprai/data/preprocessed/ecg/data_val_CAD_noBase_gn.pt"
+    args.labels_path = "/home/oturgut/sprai/data/preprocessed/ecg/labels_val_CAD.pt"
+    dataset_val = SignalDataset(transform=True, augment=False, args=args)
+
+    class_weights = 3652.0 / (2.0 * torch.Tensor([1813.0, 1839.0])) # total_nb_samples / (nb_classes * samples_per_class)
 
     print("Training set size: ", len(dataset_train))
     print("Validation set size: ", len(dataset_val))
@@ -242,7 +245,7 @@ def main(args):
 
         if args.wandb == True:
             config = vars(args)
-            wandb.init(project="MAE_He", config=config, entity="oturgut")
+            wandb.init(project="MAE_ECG_Classifier", config=config, entity="oturgut")
     elif args.eval and "checkpoint" not in args.resume.split("/")[-1]:
         log_writer = SummaryWriter(log_dir=args.log_dir + "/eval")
     else:

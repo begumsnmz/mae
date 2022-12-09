@@ -128,9 +128,10 @@ def train_one_epoch(model: torch.nn.Module,
             training_history['Normalized Correlation Coefficient'] = train_stats["ncc"]
 
             if (epoch % 10) == 0:
-                x = samples[0, ..., ::5].detach().cpu().numpy()
-                x_hat = samples_hat[0, ..., ::5].detach().cpu().numpy()
-                x_hat_masked = samples_hat_masked[0, ..., ::5].detach().cpu().numpy()
+                steps = 1
+                x = samples[0, ..., ::steps].detach().cpu().numpy()
+                x_hat = samples_hat[0, ..., ::steps].detach().cpu().numpy()
+                x_hat_masked = samples_hat_masked[0, ..., ::steps].detach().cpu().numpy()
 
                 # samples of shape (Batch, Freq, Channel, Time)
                 if samples.shape[1] > 1:
@@ -146,11 +147,11 @@ def train_one_epoch(model: torch.nn.Module,
                 plt.subplot(613)
                 plt.plot(range(0, x.shape[-1], 1), x_hat_masked[0, 0, :])
                 plt.subplot(614)
-                plt.plot(range(0, x.shape[-1], 1), x[f_bin, 32, :])
+                plt.plot(range(0, x.shape[-1], 1), x[f_bin, 5, :])
                 plt.subplot(615)
-                plt.plot(range(0, x.shape[-1], 1), x_hat[f_bin, 32, :])
+                plt.plot(range(0, x.shape[-1], 1), x_hat[f_bin, 5, :])
                 plt.subplot(616)
-                plt.plot(range(0, x.shape[-1], 1), x_hat_masked[f_bin, 32, :])
+                plt.plot(range(0, x.shape[-1], 1), x_hat_masked[f_bin, 5, :])
                 plt.tight_layout()
                 training_history["Reconstruction"] = wandb.Image(plt)
 
@@ -200,9 +201,10 @@ def evaluate(data_loader, model, device, epoch, log_writer=None, training_histor
             training_history['Val Normalized Correlation Coefficient'] = test_stats["ncc"]
 
             # if (epoch % 1) == 0:
-            #     x = samples[0, ..., ::5].detach().cpu().numpy()
-            #     x_hat = samples_hat[0, ..., ::5].detach().cpu().numpy()
-            #     x_hat_masked = samples_hat_masked[0, ..., ::5].detach().cpu().numpy()
+            #     steps = 5
+            #     x = samples[0, ..., ::steps].detach().cpu().numpy()
+            #     x_hat = samples_hat[0, ..., ::steps].detach().cpu().numpy()
+            #     x_hat_masked = samples_hat_masked[0, ..., ::steps].detach().cpu().numpy()
 
             #     # samples of shape (Batch, Freq, Channel, Time)
             #     if samples.shape[1] > 1:
@@ -218,11 +220,11 @@ def evaluate(data_loader, model, device, epoch, log_writer=None, training_histor
             #     plt.subplot(613)
             #     plt.plot(range(0, x.shape[-1], 1), x_hat_masked[0, 0, :])
             #     plt.subplot(614)
-            #     plt.plot(range(0, x.shape[-1], 1), x[f_bin, 32, :])
+            #     plt.plot(range(0, x.shape[-1], 1), x[f_bin, 5, :])
             #     plt.subplot(615)
-            #     plt.plot(range(0, x.shape[-1], 1), x_hat[f_bin, 32, :])
+            #     plt.plot(range(0, x.shape[-1], 1), x_hat[f_bin, 5, :])
             #     plt.subplot(616)
-            #     plt.plot(range(0, x.shape[-1], 1), x_hat_masked[f_bin, 32, :])
+            #     plt.plot(range(0, x.shape[-1], 1), x_hat_masked[f_bin, 5, :])
             #     plt.tight_layout()
             #     training_history["Val reconstruction"] = wandb.Image(plt)
 

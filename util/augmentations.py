@@ -14,7 +14,7 @@ class Rescaling(object):
     """
         Randomly rescale features of the sample.
     """
-    def __init__(self, sigma=0.1) -> None:
+    def __init__(self, sigma=0.5) -> None:
         self.sigma = sigma
 
     def __call__(self, sample) -> Any:
@@ -31,11 +31,13 @@ class Jitter(object):
     """
         Add gaussian noise to the sample.
     """
-    def __init__(self, sigma=0.03) -> None:
+    def __init__(self, sigma=0.2, amplitude=0.6) -> None:
         self.sigma = sigma
+        self.amplitude = amplitude
 
     def __call__(self, sample) -> Any:
-        return sample + torch.normal(mean=0, std=self.sigma, size=sample.shape)
+        amplitude = self.amplitude * sample
+        return sample + amplitude * torch.normal(mean=0, std=self.sigma, size=sample.shape)
 
 class Shift(object):
     """

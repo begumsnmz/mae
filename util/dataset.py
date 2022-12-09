@@ -12,7 +12,7 @@ import util.transformations as transformations
 import util.augmentations as augmentations
 
 
-class EEGDatasetFast(Dataset):
+class SignalDataset(Dataset):
     """Fast EEGDataset (fetching prepared data and labels from files)"""
     def __init__(self, transform=False, augment=False, transfer=False, args=None) -> None:
         """load data and labels from files"""
@@ -42,16 +42,16 @@ class EEGDatasetFast(Dataset):
         data = data[:, :self.args.input_electrodes, :]
         
         if self.transform == True:
-            transform = augmentations.CropResizing(fixed_crop_len=self.args.input_size[-1], start_idx=0)
+            transform = augmentations.CropResizing(fixed_crop_len=self.args.input_size[-1], start_idx=0, resize=False)
             data = transform(data)
 
         if self.augment == True:
-            lower_bnd = self.args.crop_lbd * self.args.input_size[-1] / data.shape[-1]
-            upper_bnd = 1.00 * self.args.input_size[-1] / data.shape[-1]
+            # lower_bnd = self.args.crop_lbd * self.args.input_size[-1] / data.shape[-1]
+            # upper_bnd = 1.00 * self.args.input_size[-1] / data.shape[-1]
             augment = transforms.Compose([augmentations.Jitter(sigma=self.args.jitter_sigma),
                                           augmentations.Rescaling(sigma=self.args.rescaling_sigma),
                                           augmentations.FTSurrogate(phase_noise_magnitude=self.args.ft_surr_phase_noise, prob=0.5),
-                                          augmentations.CropResizing(lower_bnd=lower_bnd, upper_bnd=upper_bnd, resize=True, fixed_resize_len=self.args.input_size[-1]),
+                                          augmentations.CropResizing(fixed_crop_len=self.args.input_size[-1], resize=False),
                                           #augmentations.TimeFlip(prob=0.33),
                                           #augmentations.SignFlip(prob=0.33)
                                           ])

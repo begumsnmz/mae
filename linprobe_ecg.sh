@@ -2,21 +2,21 @@
 # Linear probing
 
 # Basic parameters
-batch_size=(8)
-accum_iter=(1)
+batch_size=(128)
+accum_iter=(4)
 
 epochs="90"
 warmup_epochs="9"
 
 # Model parameters
-input_channels="6"
-input_electrodes="65"
-time_steps="55000"
+input_channels="1"
+input_electrodes="12"
+time_steps="5000"
 model_size="tiny"
 model="vit_"$model_size"_patchX"
 
-patch_height="65"
-patch_width="50"
+patch_height="1"
+patch_width="100"
 
 # Augmentation parameters
 jitter_sigma="0.2"
@@ -30,29 +30,29 @@ blr=(1e-4)
 weight_decay=(0.1)
 
 # Criterion parameters
-smoothing=(0.2)
+smoothing=(0.1)
 
 # Dataset parameters
-data_path="/home/oturgut/sprai/data/preprocessed/data_DINH_701515_nf_cw_bw_fs200.pt"
-labels_path="/home/oturgut/sprai/data/preprocessed/labels_DINH_701515.pt"
+data_path="/home/oturgut/sprai/data/preprocessed/ecg/data_train_CAD_noBase_gn.pt"
+labels_path="/home/oturgut/sprai/data/preprocessed/ecg/labels_train_CAD.pt"
 nb_classes="2"
 
-global_pool="True"
+global_pool="False"
 num_workers="32"
 
 # Log specifications
-save_output="True"
+save_output="False"
 wandb="True"
 
-folder="noExternal"
-subfolder=($model_size"/2d/t37000/p"$patch_height"x"$patch_width"/m0.75")
+folder="ecg/noExternal"
+subfolder=($model_size"/1d/t2000/p"$patch_height"x"$patch_width"/m0.75")
 
 # Pretraining specifications
-pre_batch_size=(4)
-pre_blr=(1e-3)
+pre_batch_size=(64)
+pre_blr=(1e-4)
 
-pre_data=$folder"_b"$pre_batch_size"_blr"$pre_blr
-finetune="/home/oturgut/sprai/mae_he/mae/output/pre/"$folder"/"$subfolder"/pre_"$pre_data"/checkpoint-50.pth"
+pre_data="b"$pre_batch_size"_blr"$pre_blr
+finetune="/home/oturgut/sprai/mae_he/mae/output/pre/"$folder"/"$subfolder"/pre_"$pre_data"/checkpoint-399.pth"
 
 for bs in "${batch_size[@]}"
 do

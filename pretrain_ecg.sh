@@ -8,21 +8,21 @@ if [ "$external" = "on" ]; then
     batch_size="32"
     accum_iter=(4)
 else
-    batch_size="16"
-    accum_iter=(8)
+    batch_size="128"
+    accum_iter=(1)
 fi
-epochs="750"
-warmup_epochs="75"
+epochs="400"
+warmup_epochs="40"
 
 # Model parameters
-input_channels="5"
-input_electrodes="65"
-time_steps="37000"
-model_size="base"
+input_channels="1"
+input_electrodes="12"
+time_steps="2000"
+model_size="tiny"
 model="mae_vit_"$model_size"_patchX"
 
-patch_height="65"
-patch_width=(50)
+patch_height="1"
+patch_width=(100)
 
 # Augmentation parameters
 mask_ratio="0.75"
@@ -33,14 +33,14 @@ ft_surr_phase_noise="0.075"
 
 # Optimizer parameters
 blr_array=(1e-4)
-weight_decay="0.1"
+weight_decay="0.05"
 
 # Dataset parameters
-data_path="/home/oturgut/sprai/data/preprocessed/data_DINH_701515_nf_cw_bw_fs200.pt"
-labels_path="/home/oturgut/sprai/data/preprocessed/labels_DINH_701515.pt"
+data_path="/home/oturgut/sprai/data/preprocessed/ecg/data_train_CAD_noBase_gn.pt"
+labels_path="/home/oturgut/sprai/data/preprocessed/ecg/labels_train_CAD.pt"
 
-transfer_data_path="/home/oturgut/sprai/data/preprocessed/data_SEED_cw_bw_fs200.pt"
-transfer_labels_path="/home/oturgut/sprai/data/preprocessed/labels_SEED.pt"
+transfer_data_path=""
+transfer_labels_path=""
 
 num_workers="32"
 
@@ -50,7 +50,7 @@ wandb="True"
 
 # Checkpoints
 resume_from_ckpt="False"
-resume="/home/oturgut/sprai/mae_he/mae/output/pre/noExternal/tiny/2d/t37000/p65x50/m0.75/pre_noExternal_b"$(($batch_size*$accum_iter))"_blr"$blr_array"/checkpoint-450.pth"
+# resume="/home/oturgut/sprai/mae_he/mae/output/pre/noExternal/tiny/2d/t37000/p65x50/m0.75/pre_noExternal_b"$(($batch_size*$accum_iter))"_blr"$blr_array"/checkpoint-450.pth"
 
 
 for blr in "${blr_array[@]}"
@@ -61,14 +61,14 @@ do
         do
 
             if [ "$external" = "on" ]; then
-                folder="seed"
+                folder="ecg/-"
             else
-                folder="noExternal"
+                folder="ecg/noExternal"
             fi
 
             pre_data="pre_b"$(($batch_size*$acc_it))"_blr"$blr
 
-            subfolder=$model_size"/2d/t"$time_steps"/p"$patch_height"x"$pw"/m"$mask_ratio
+            subfolder=$model_size"/1d/t"$time_steps"/p"$patch_height"x"$pw"/m"$mask_ratio
             output_dir="./output/pre/"$folder"/"$subfolder"/"$pre_data
             log_dir="./logs/pre/"$folder"/"$subfolder"/"$pre_data
         

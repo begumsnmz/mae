@@ -182,8 +182,8 @@ def evaluate(data_loader, model, device):
             output = model(images)
             loss = criterion(output, target)
 
-        print("Target: ", [i.item() for i in target])
-        print("Output: ", [i.item() for i in torch.argmax(output, dim=1)])
+        # print("Target: ", [i.item() for i in target])
+        # print("Output: ", [i.item() for i in torch.argmax(output, dim=1)])
 
         acc1, acc5 = accuracy(output, target, topk=(1, 5))
         acc = metric_acc(output.argmax(dim=-1), target)
