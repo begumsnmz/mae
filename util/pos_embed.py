@@ -21,7 +21,7 @@ def get_2d_sincos_pos_embed(embed_dim, grid_size, cls_token=False):
     """
     grid_size: (grid_height, grid_width)
     return:
-    pos_embed: [grid_height*grid_width, embed_dim] or [1+grid_height*grid_width, embed_dim] (w/ or w/o cls_token)
+    pos_embed: [grid_height*grid_width, embed_dim] or [1+grid_height*grid_width, embed_dim] (w/o or w/ cls_token)
     """
     grid_height, grid_width = grid_size
     grid_h = np.arange(grid_height, dtype=np.float32)

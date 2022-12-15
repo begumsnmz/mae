@@ -55,7 +55,7 @@ class VisionTransformer(timm.models.vision_transformer.VisionTransformer):
 
 def vit_pluto_patchX(**kwargs):
     model = VisionTransformer(
-        embed_dim=192, depth=3, num_heads=6, mlp_ratio=4, qkv_bias=True,
+        embed_dim=256, depth=3, num_heads=6, mlp_ratio=4, qkv_bias=True,
         norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
     return model
 
@@ -87,24 +87,6 @@ def vit_big_patchX(**kwargs):
 def vit_base_patch200(**kwargs):
     model = VisionTransformer(
         patch_size=(65, 200), embed_dim=768, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
-        norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
-    return model
-
-def vit_base_patch100(**kwargs):
-    model = VisionTransformer(
-        patch_size=(65, 100), embed_dim=768, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
-        norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
-    return model
-
-def vit_base_patch50(**kwargs):
-    model = VisionTransformer(
-        patch_size=(65, 50), embed_dim=768, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
-        norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
-    return model
-
-def vit_base_patch10(**kwargs):
-    model = VisionTransformer(
-        patch_size=(65, 10), embed_dim=768, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
         norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
     return model
 

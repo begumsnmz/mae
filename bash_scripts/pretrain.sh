@@ -69,8 +69,8 @@ do
             pre_data="pre_b"$(($batch_size*$acc_it))"_blr"$blr
 
             subfolder=$model_size"/2d/t"$time_steps"/p"$patch_height"x"$pw"/m"$mask_ratio
-            output_dir="./output/pre/"$folder"/"$subfolder"/"$pre_data
-            log_dir="./logs/pre/"$folder"/"$subfolder"/"$pre_data
+            output_dir="/home/oturgut/sprai/mae_he/mae/output/pre/"$folder"/"$subfolder"/"$pre_data
+            log_dir="/home/oturgut/sprai/mae_he/mae/logs/pre/"$folder"/"$subfolder"/"$pre_data
         
             cmd="python3 main_pretrain.py --jitter_sigma $jitter_sigma --rescaling_sigma $rescaling_sigma --ft_surr_phase_noise $ft_surr_phase_noise --input_channels $input_channels --input_electrodes $input_electrodes --time_steps $time_steps --patch_height $patch_height --patch_width $pw --model $model --batch_size $batch_size --epochs $epochs --accum_iter $acc_it --mask_ratio $mask_ratio --weight_decay $weight_decay --blr $blr --warmup_epoch $warmup_epochs --data_path $data_path --labels_path $labels_path --log_dir $log_dir --num_workers $num_workers"
             

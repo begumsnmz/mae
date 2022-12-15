@@ -126,6 +126,8 @@ def get_args_parser():
     parser.add_argument('--log_dir', default='./logs',
                         help='path where to tensorboard log')
     parser.add_argument('--wandb', action='store_true', default=False)
+    parser.add_argument('--wandb_project', default='',
+                        help='project where to wandb log')
     parser.add_argument('--device', default='cuda',
                         help='device to use for training / testing')
     parser.add_argument('--seed', default=0, type=int)
@@ -245,7 +247,7 @@ def main(args):
 
         if args.wandb == True:
             config = vars(args)
-            wandb.init(project="MAE_ECG_Classifier", config=config, entity="oturgut")
+            wandb.init(project=args.wandb_project, config=config, entity="oturgut")
     elif args.eval and "checkpoint" not in args.resume.split("/")[-1]:
         log_writer = SummaryWriter(log_dir=args.log_dir + "/eval")
     else:

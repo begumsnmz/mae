@@ -49,7 +49,7 @@ pre_blr=(1e-3)
 
 pre_data=$folder"_b"$pre_batch_size"_blr"$pre_blr
 
-log_dir="./logs/fin/"$folder"/"$subfolder"/fin_b"$(($batch_size*$accum_iter))"_blr"$blr"_"$pre_data
+log_dir="/home/oturgut/sprai/mae_he/mae/logs/fin/"$folder"/"$subfolder"/fin_b"$(($batch_size*$accum_iter))"_blr"$blr"_"$pre_data
 
 # As filename: State the checkpoint for the inference of a specific model
 # or state the (final) epoch for the inference of all models up to this epoch

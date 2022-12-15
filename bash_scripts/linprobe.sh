@@ -66,8 +66,8 @@ do
                 for smth in "${smoothing[@]}"
                 do
 
-                    output_dir="./output/lin/"$folder"/"$subfolder"/lin_b"$(($bs*$acc_it))"_blr"$lr"_"$pre_data
-                    log_dir="./logs/lin/"$folder"/"$subfolder"/lin_b"$(($bs*$acc_it))"_blr"$lr"_"$pre_data
+                    output_dir="/home/oturgut/sprai/mae_he/mae/output/lin/"$folder"/"$subfolder"/lin_b"$(($bs*$acc_it))"_blr"$lr"_"$pre_data
+                    log_dir="/home/oturgut/sprai/mae_he/mae/logs/lin/"$folder"/"$subfolder"/lin_b"$(($bs*$acc_it))"_blr"$lr"_"$pre_data
 
                     # resume="/home/oturgut/sprai/mae_he/mae/output/lin/"$folder"/"$subfolder"/lin_b"$bs"_blr"$lr"_"$pre_data"/checkpoint-78.pth"
 
