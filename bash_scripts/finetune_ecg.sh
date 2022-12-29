@@ -1,8 +1,9 @@
 #!/usr/bin/bash
 # Fine tuning 
 
-# Basic parameters
-batch_size=(32)
+# Basic parameters seed = [0, 101, 202, 303, 404]
+seed="0"
+batch_size=(16)
 accum_iter=(1)
 
 epochs="50"
@@ -27,7 +28,7 @@ drop_path=(0.05)
 layer_decay="0.75"
 
 # Optimizer parameters
-blr=(3e-6)
+blr=(1e-6)
 weight_decay=(0.1)
 
 # Criterion parameters
@@ -42,7 +43,7 @@ global_pool="False"
 num_workers="32"
 
 # Log specifications
-save_output="True"
+save_output="False"
 wandb="True"
 wandb_project="MAE_ECG_Fin"
 
@@ -71,17 +72,19 @@ do
                     do
 
                         folder="ecg/noExternal"
-                        subfolder=(""$model_size"/1d/t2500/p"$patch_height"x"$p_width"/wd0.15/m0.8")
+                        subfolder=(""$model_size"/1d/t2500/p"$patch_height"x"$p_width"/wd0.15/m0.75")
 
                         pre_data="b"$pre_bs"_blr"$pre_blr
                         finetune="/home/oturgut/sprai/mae_he/mae/output/pre/"$folder"/"$subfolder"/pre_"$pre_data"/checkpoint-399.pth"
+                        # finetune="/home/oturgut/ECGMultimodalContrastiveLearning/oezguen/mm_v92_mae_checkpoint.pth"
+                        # finetune="/home/oturgut/ECGMultimodalContrastiveLearning/pretrained_checkpoints/tiny/checkpoint-399.pth"
 
                         output_dir="/home/oturgut/sprai/mae_he/mae/output/fin/"$folder"/"$subfolder"/fin_b"$(($bs*$acc_it))"_blr"$lr"_"$pre_data
                         log_dir="/home/oturgut/sprai/mae_he/mae/logs/fin/"$folder"/"$subfolder"/fin_b"$(($bs*$acc_it))"_blr"$lr"_"$pre_data
 
                         # resume="/home/oturgut/sprai/mae_he/mae/output/fin/"$folder"/"$subfolder"/fin_b"$bs"_blr"$lr"_"$pre_data"/checkpoint-78.pth"
 
-                        cmd="python3 main_finetune.py --finetune $finetune --jitter_sigma $jitter_sigma --rescaling_sigma $rescaling_sigma --ft_surr_phase_noise $ft_surr_phase_noise --input_channels $input_channels --input_electrodes $input_electrodes --time_steps $time_steps --patch_height $patch_height --patch_width $p_width --model $model --batch_size $bs --epochs $epochs --accum_iter $acc_it --drop_path $dp --weight_decay $weight_decay --layer_decay $layer_decay --blr $lr --warmup_epoch $warmup_epochs --smoothing $smoothing --data_path $data_path --labels_path $labels_path --nb_classes $nb_classes --log_dir $log_dir --num_workers $num_workers"
+                        cmd="python3 main_finetune.py --finetune $finetune --seed $seed --jitter_sigma $jitter_sigma --rescaling_sigma $rescaling_sigma --ft_surr_phase_noise $ft_surr_phase_noise --input_channels $input_channels --input_electrodes $input_electrodes --time_steps $time_steps --patch_height $patch_height --patch_width $p_width --model $model --batch_size $bs --epochs $epochs --accum_iter $acc_it --drop_path $dp --weight_decay $weight_decay --layer_decay $layer_decay --blr $lr --warmup_epoch $warmup_epochs --smoothing $smoothing --data_path $data_path --labels_path $labels_path --nb_classes $nb_classes --log_dir $log_dir --num_workers $num_workers"
 
                         if [ "$global_pool" == "True" ]; then
                             cmd=$cmd" --global_pool"
