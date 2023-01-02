@@ -215,8 +215,8 @@ def main(args):
     # dataset_val = ConcatDataset([dataset_d_validation_sub, dataset_h_validation_sub])
 
     dataset_train = SignalDataset(augment=True, args=args)
-    args.data_path = "/home/oturgut/sprai/data/preprocessed/ecg/data_val_CAD_noBase_gn.pt"
-    args.labels_path = "/home/oturgut/sprai/data/preprocessed/ecg/labels_val_CAD.pt"
+    args.data_path = "/home/oturgut/sprai/data/preprocessed/ecg/ecgs_val_ecg_imaging_noBase_gn.pt"
+    args.labels_path = "/home/oturgut/sprai/data/preprocessed/ecg/labelsOneHot/labels_val_CAD_all.pt"
     dataset_val = SignalDataset(transform=True, augment=False, args=args)
 
     print("Training set size: ", len(dataset_train))

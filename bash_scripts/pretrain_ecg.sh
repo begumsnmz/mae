@@ -29,17 +29,17 @@ norm_pix_loss="False"
 # Augmentation parameters
 mask_ratio=(0.8)
 
-jitter_sigma="0.2"
+jitter_sigma="0.25"
 rescaling_sigma="0.5"
-ft_surr_phase_noise="0.075"
+ft_surr_phase_noise="0.1"
 
 # Optimizer parameters
 blr_array=(1e-5)
 weight_decay=(0.15)
 
 # Dataset parameters
-data_path="/home/oturgut/sprai/data/preprocessed/ecg/data_train_CAD_noBase_gn.pt"
-labels_path="/home/oturgut/sprai/data/preprocessed/ecg/labels_train_CAD.pt"
+data_path="/home/oturgut/sprai/data/preprocessed/ecg/ecgs_train_ecg_imaging_noBase_gn.pt"
+labels_path="/home/oturgut/sprai/data/preprocessed/ecg/labelsOneHot/labels_train_CAD_all.pt"
 
 transfer_data_path=""
 transfer_labels_path=""
@@ -71,7 +71,7 @@ do
 
             pre_data="pre_b"$(($batch_size*$acc_it))"_blr"$blr
 
-            subfolder=$model_size"/1d/t"$time_steps"/p"$patch_height"x"$patch_width"/wd"$weight_decay"/m"$mr
+            subfolder=$model_size"/1d/t"$time_steps"/p"$patch_height"x"$patch_width"/wd"$weight_decay"/m"$mr"/v1"
             output_dir="/home/oturgut/sprai/mae_he/mae/output/pre/"$folder"/"$subfolder"/"$pre_data
             log_dir="/home/oturgut/sprai/mae_he/mae/logs/pre/"$folder"/"$subfolder"/"$pre_data
         
