@@ -241,7 +241,7 @@ def main(args):
         sampler_train = torch.utils.data.RandomSampler(dataset_train)
         sampler_val = torch.utils.data.SequentialSampler(dataset_val)
 
-    if global_rank == 0 and args.log_dir is not None and not args.eval:
+    if global_rank == 0 and args.log_dir is not None: # and not args.eval:
         os.makedirs(args.log_dir, exist_ok=True)
         log_writer = SummaryWriter(log_dir=args.log_dir)
 
@@ -382,6 +382,16 @@ def main(args):
                 log_writer.add_scalar('perf/test_auroc', test_stats['auroc'], epoch)
                 log_writer.add_scalar('perf/test_loss', test_stats['loss'], epoch)
         
+            if args.wandb == True:
+                training_history = {'epoch' : epoch,
+                                    'test_acc1' : test_stats['acc1'],
+                                    #'test_acc5' : test_stats['acc5'],
+                                    'test_acc' : test_stats['acc'],
+                                    'test_f1' : test_stats['f1'],
+                                    'test_auroc' : test_stats['auroc'],
+                                    'test_loss' : test_stats['loss']}
+                wandb.log(training_history)
+
         exit(0)
 
     print(f"Start training for {args.epochs} epochs")

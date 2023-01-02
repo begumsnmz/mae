@@ -104,7 +104,7 @@ def get_args_parser():
     parser.add_argument('--layer_decay', type=float, default=0.75,
                         help='layer-wise lr decay from ELECTRA/BEiT')
 
-    parser.add_argument('--min_lr', type=float, default=1e-6, metavar='LR',
+    parser.add_argument('--min_lr', type=float, default=0., metavar='LR',
                         help='lower lr bound for cyclic schedulers that hit 0')
 
     parser.add_argument('--warmup_epochs', type=int, default=5, metavar='N',
@@ -192,7 +192,8 @@ def main(args):
     args.input_size = (args.input_channels, args.input_electrodes, args.time_steps)
     args.patch_size = (args.patch_height, args.patch_width)
 
-    misc.init_distributed_mode(args)
+    # misc.init_distributed_mode(args)
+    args.distributed = False
 
     print('job dir: {}'.format(os.path.dirname(os.path.realpath(__file__))))
     print("{}".format(args).replace(', ', ',\n'))
@@ -215,8 +216,8 @@ def main(args):
     # else:
     #     dataset_val = Subset(dataset_d_validation, list(range(int(160*1), int(189*1))))
 
-    # args.data_path = "/home/oturgut/PyTorchEEG/data/preprocessed/data_HEITMANN_701515_nf_cw_id_fs200.pt"
-    # args.labels_path = "/home/oturgut/PyTorchEEG/data/preprocessed/labels_HEITMANN_701515.pt"
+    # args.data_path = "/home/guests/oezguen_turgut/PyTorchEEG/data/preprocessed/data_HEITMANN_701515_nf_cw_id_fs200.pt"
+    # args.labels_path = "/home/guests/oezguen_turgut/PyTorchEEG/data/preprocessed/labels_HEITMANN_701515.pt"
 
     # dataset_h_train = EEGDatasetFast(augment=True, args=args)
     # dataset_h_train_sub = Subset(dataset_h_train, list(range(int(0*1), int(27*1))))
@@ -230,11 +231,21 @@ def main(args):
     # dataset_val = ConcatDataset([dataset_val, dataset_h_validation_sub])
     
     dataset_train = SignalDataset(augment=True, args=args)
-    args.data_path = "/home/oturgut/sprai/data/preprocessed/ecg/data_val_CAD_noBase_gn.pt"
-    args.labels_path = "/home/oturgut/sprai/data/preprocessed/ecg/labels_val_CAD.pt"
+    # val balanced
+    # args.data_path = "/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/ecgs_val_CAD_all_balanced_noBase_gn.pt"
+    # args.labels_path = "/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/labelsOneHot/labels_val_CAD_all_balanced.pt"
+    # val unbalanced
+    # args.data_path = "/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/ecgs_val_ecg_imaging_noBase_gn.pt"
+    # args.labels_path = "/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/labelsOneHot/labels_val_CAD_all.pt"
+    # test unbalanced
+    args.data_path = "/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/ecgs_test_ecg_imaging_noBase_gn.pt"
+    args.labels_path = "/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/labelsOneHot/labels_test_CAD_all.pt"
     dataset_val = SignalDataset(transform=True, augment=False, args=args)
 
-    class_weights = 3652.0 / (2.0 * torch.Tensor([1813.0, 1839.0])) # total_nb_samples / (nb_classes * samples_per_class)
+    # train CAD balanced
+    # class_weights = 4030.0 / (2.0 * torch.Tensor([2015.0, 2015.0])) # total_nb_samples / (nb_classes * samples_per_class)
+    # train CAD unbalanced
+    class_weights = 28030.0 / (2.0 * torch.Tensor([26015.0, 2015.0])) # total_nb_samples / (nb_classes * samples_per_class)
 
     print("Training set size: ", len(dataset_train))
     print("Validation set size: ", len(dataset_val))
@@ -259,7 +270,7 @@ def main(args):
         sampler_train = torch.utils.data.RandomSampler(dataset_train)
         sampler_val = torch.utils.data.SequentialSampler(dataset_val)
 
-    if global_rank == 0 and args.log_dir is not None and not args.eval:
+    if global_rank == 0 and args.log_dir is not None: # and not args.eval:
         os.makedirs(args.log_dir, exist_ok=True)
         log_writer = SummaryWriter(log_dir=args.log_dir)
 
@@ -402,6 +413,16 @@ def main(args):
                 log_writer.add_scalar('perf/test_f1', test_stats['f1'], epoch)
                 log_writer.add_scalar('perf/test_auroc', test_stats['auroc'], epoch)
                 log_writer.add_scalar('perf/test_loss', test_stats['loss'], epoch)
+
+            if args.wandb == True:
+                training_history = {'epoch' : epoch,
+                                    'test_acc1' : test_stats['acc1'],
+                                    #'test_acc5' : test_stats['acc5'],
+                                    'test_acc' : test_stats['acc'],
+                                    'test_f1' : test_stats['f1'],
+                                    'test_auroc' : test_stats['auroc'],
+                                    'test_loss' : test_stats['loss']}
+                wandb.log(training_history)
         
         exit(0)
 
