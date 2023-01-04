@@ -24,6 +24,8 @@ class VisionTransformer(timm.models.vision_transformer.VisionTransformer):
         super(VisionTransformer, self).__init__(**kwargs)
 
         self.global_pool = global_pool
+        if self.global_pool == "attention_pool":
+            self.attention_pool = nn.MultiheadAttention(embed_dim=kwargs['embed_dim'], num_heads=kwargs['num_heads'], batch_first=True)
         if self.global_pool:
             norm_layer = kwargs['norm_layer']
             embed_dim = kwargs['embed_dim']
@@ -43,7 +45,13 @@ class VisionTransformer(timm.models.vision_transformer.VisionTransformer):
         for blk in self.blocks:
             x = blk(x)
 
-        if self.global_pool:
+        if self.global_pool == "attention_pool":
+            q = x[:, 1:, :].mean(dim=1, keepdim=True)
+            k = x[:, 1:, :]
+            v = x[:, 1:, :]
+            x, x_weights = self.attention_pool(q, k, v) # attention pool without cls token
+            outcome = self.fc_norm(x.squeeze(dim=1))
+        elif self.global_pool:
             x = x[:, 1:, :].mean(dim=1)  # global pool without cls token
             outcome = self.fc_norm(x)
         else:

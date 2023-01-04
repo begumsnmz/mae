@@ -24,7 +24,7 @@ from timm.utils import accuracy
 
 import util.misc as misc
 import util.lr_sched as lr_sched
-
+import util.plot as plot
 
 def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
                     data_loader: Iterable, optimizer: torch.optim.Optimizer,
@@ -45,10 +45,10 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
         print('log_dir: {}'.format(log_writer.log_dir))
         training_history = {}
     
-    metric_acc = torchmetrics.Accuracy(num_classes=2, threshold=0.5, average='micro').to(device=device)
-    metric_f1 = torchmetrics.F1Score(num_classes=2, threshold=0.5, average='micro').to(device=device)
-    pos_label = 0
-    metric_auroc = torchmetrics.AUROC(num_classes=2, pos_label=pos_label, average='macro').to(device=device)
+    metric_acc = torchmetrics.Accuracy(num_classes=args.nb_classes, threshold=0.5, average='weighted').to(device=device)
+    metric_f1 = torchmetrics.F1Score(num_classes=args.nb_classes, threshold=0.5, average=None).to(device=device)
+    pos_label = args.pos_label
+    metric_auroc = torchmetrics.AUROC(num_classes=args.nb_classes, pos_label=pos_label, average='macro').to(device=device)
     preds = []
     trgts = []
 
@@ -83,7 +83,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
 
         acc1, _ = accuracy(outputs, targets, topk=(1, 5))
         acc = metric_acc(outputs.argmax(dim=-1), targets)
-        f1 = metric_f1(outputs.argmax(dim=-1), targets)
+        f1 = metric_f1(outputs.argmax(dim=-1), targets)[pos_label]
         auroc = metric_auroc(torch.nn.functional.softmax(outputs, dim=-1)[:, pos_label], targets)
         # store the results of each step in a list to calculate the auc globally of the entire epoch
         [preds.append(elem.item()) for elem in torch.nn.functional.softmax(outputs, dim=-1)[:, pos_label]]
@@ -116,7 +116,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
     acc = 100*metric_acc.compute()
     metric_acc.reset()
 
-    f1 = 100*metric_f1.compute() # returns the f1 score
+    f1 = 100*metric_f1.compute()[pos_label] # returns the f1 score
     metric_f1.reset()
     training_stats["f1"] = f1.item()
 
@@ -154,7 +154,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
 
 
 @torch.no_grad()
-def evaluate(data_loader, model, device):
+def evaluate(data_loader, model, device, args=None):
     criterion = torch.nn.CrossEntropyLoss()
 
     metric_logger = misc.MetricLogger(delimiter="  ")
@@ -162,10 +162,10 @@ def evaluate(data_loader, model, device):
 
     # switch to evaluation mode
     model.eval()
-    metric_acc = torchmetrics.Accuracy(num_classes=2, threshold=0.5, average='micro').to(device=device)
-    metric_f1 = torchmetrics.F1Score(num_classes=2, threshold=0.5, average='micro').to(device=device)
-    pos_label = 0
-    metric_auroc = torchmetrics.AUROC(num_classes=2, pos_label=pos_label, average='macro').to(device=device)
+    metric_acc = torchmetrics.Accuracy(num_classes=args.nb_classes, threshold=0.5, average='weighted').to(device=device)
+    metric_f1 = torchmetrics.F1Score(num_classes=args.nb_classes, threshold=0.5, average=None).to(device=device)
+    pos_label = args.pos_label
+    metric_auroc = torchmetrics.AUROC(num_classes=args.nb_classes, pos_label=pos_label, average='macro').to(device=device)
     preds = []
     trgts = []
     # #### THIS IS ONLY FOR SEED ####
@@ -182,12 +182,14 @@ def evaluate(data_loader, model, device):
             output = model(images)
             loss = criterion(output, target)
 
+        attention_map = model.blocks[-1].attn.attn_map
+
         # print("Target: ", [i.item() for i in target])
         # print("Output: ", [i.item() for i in torch.argmax(output, dim=1)])
 
         acc1, acc5 = accuracy(output, target, topk=(1, 5))
         acc = metric_acc(output.argmax(dim=-1), target)
-        f1 = metric_f1(output.argmax(dim=-1), target)
+        f1 = metric_f1(output.argmax(dim=-1), target)[pos_label]
         auroc = metric_auroc(torch.nn.functional.softmax(output, dim=-1)[:, pos_label], target)
         # store the results of each step in a list to calculate the auc globally of the entire epoch
         [preds.append(elem.item()) for elem in torch.nn.functional.softmax(output, dim=-1)[:, pos_label]]
@@ -201,6 +203,10 @@ def evaluate(data_loader, model, device):
         metric_logger.meters['f1'].update(100*f1.item(), n=batch_size)
         metric_logger.meters['auroc'].update(100*auroc.item(), n=batch_size)
 
+    if args.wandb:
+        idx = 1 if args.batch_size > 1 else 0
+        plot.plot_attention(images, attention_map, idx)
+
     # gather the stats from all processes
     metric_logger.synchronize_between_processes()
 
@@ -209,7 +215,7 @@ def evaluate(data_loader, model, device):
     acc = 100*metric_acc.compute()
     metric_acc.reset()
 
-    f1 = 100*metric_f1.compute() # returns the f1 score
+    f1 = 100*metric_f1.compute()[pos_label] # returns the f1 score
     metric_f1.reset()
     test_stats["f1"] = f1.item()
 

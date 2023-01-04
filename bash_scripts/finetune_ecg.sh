@@ -8,7 +8,6 @@
 #SBATCH --gres=gpu:1  # Number of GPUs if needed
 #SBATCH --cpus-per-task=24  # Number of CPUs (Don't use more than 24 per GPU)
 #SBATCH --mem=126G  # Memory in GB (Don't use more than 126G per GPU)
-#SBATCH --nodelist=c1-node01
  
 # load python module
 ml python/anaconda3
@@ -19,11 +18,15 @@ conda activate mae
 
 # Basic parameters seed = [0, 101, 202, 303, 404]
 seed="0"
-batch_size=(8)
+batch_size=(32)
 accum_iter=(1)
 
 epochs="50"
 warmup_epochs="5"
+
+# Callback parameters
+patience="4"
+max_delta="0"
 
 # Model parameters
 input_channels="1"
@@ -44,8 +47,8 @@ drop_path=(0.05)
 layer_decay="0.75"
 
 # Optimizer parameters
-blr=(3e-6)
-min_lr="1e-7"
+blr=(3e-5)
+min_lr="0.0"
 weight_decay=(0.1)
 
 # Criterion parameters
@@ -54,17 +57,19 @@ smoothing=(0.2)
 # Dataset parameters
 # data_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/ecgs_train_CAD_all_balanced_noBase_gn.pt"
 # labels_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/labelsOneHot/labels_train_CAD_all_balanced.pt"
-data_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/ecgs_train_ecg_imaging_noBase_gn.pt"
-labels_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/labelsOneHot/labels_train_CAD_all.pt"
+data_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/ecgs_train_BMI_balanced_noBase_gn.pt"
+labels_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/labelsOneHot/labels_train_BMI_balanced.pt"
 nb_classes="2"
+pos_label="0"
 
-global_pool=(True)
+global_pool=(False)
+attention_pool=(True)
 num_workers="24"
 
 # Log specifications
 save_output="False"
 wandb="True"
-wandb_project="MAE_ECG_Fin_Tiny_CAD"
+wandb_project="MAE_ECG_Fin_Tiny_BMI"
 
 # Pretraining specifications
 pre_batch_size=(128)
@@ -90,12 +95,12 @@ do
                     for smth in "${smoothing[@]}"
                     do
 
-                        folder="ecg/noExternal"
-                        subfolder=($model_size"/1d/t2500/p"$patch_height"x"$patch_width"/wd"$weight_decay"/m0.8/trainUnbalanced")
+                        folder="ecg/BMI/MAE"
+                        subfolder=($model_size"/1d/t2500/p"$patch_height"x"$patch_width"/wd"$weight_decay"/dp"$dp"/smth"$smth"/m0.8/atp")
 
                         pre_data="b"$pre_batch_size"_blr"$pre_blr
                         # finetune="/home/guests/oezguen_turgut/sprai/mae_he/mae/output/pre/"$folder"/"$subfolder"/pre_"$pre_data"/checkpoint-399.pth"
-                        # finetune="/home/guests/oezguen_turgut/ECGMultimodalContrastiveLearning/oezguen/checkpoints/mm_v252_mae_checkpoint.pth"
+                        # finetune="/home/guests/oezguen_turgut/ECGMultimodalContrastiveLearning/oezguen/checkpoints/mm_v230_mae_checkpoint.pth"
                         finetune="/home/guests/oezguen_turgut/ECGMultimodalContrastiveLearning/pretrained_checkpoints/tiny/v1/checkpoint-399.pth"
 
                         output_dir="/home/guests/oezguen_turgut/sprai/mae_he/mae/output/fin/"$folder"/"$subfolder"/fin_b"$(($bs*$acc_it))"_blr"$lr"_"$pre_data
@@ -103,10 +108,14 @@ do
 
                         # resume="/home/guests/oezguen_turgut/sprai/mae_he/mae/output/fin/"$folder"/"$subfolder"/fin_b"$bs"_blr"$lr"_"$pre_data"/checkpoint-78.pth"
 
-                        cmd="python3 main_finetune.py --finetune $finetune --seed $seed --jitter_sigma $jitter_sigma --rescaling_sigma $rescaling_sigma --ft_surr_phase_noise $ft_surr_phase_noise --input_channels $input_channels --input_electrodes $input_electrodes --time_steps $time_steps --patch_height $patch_height --patch_width $patch_width --model $model --batch_size $bs --epochs $epochs --accum_iter $acc_it --drop_path $dp --weight_decay $wd --layer_decay $layer_decay --min_lr $min_lr --blr $lr --warmup_epoch $warmup_epochs --smoothing $smth --data_path $data_path --labels_path $labels_path --nb_classes $nb_classes --log_dir $log_dir --num_workers $num_workers"
+                        cmd="python3 main_finetune.py --pos_label $pos_label --seed $seed --jitter_sigma $jitter_sigma --rescaling_sigma $rescaling_sigma --ft_surr_phase_noise $ft_surr_phase_noise --input_channels $input_channels --input_electrodes $input_electrodes --time_steps $time_steps --patch_height $patch_height --patch_width $patch_width --model $model --batch_size $bs --epochs $epochs --patience $patience --max_delta $max_delta --accum_iter $acc_it --drop_path $dp --weight_decay $wd --layer_decay $layer_decay --min_lr $min_lr --blr $lr --warmup_epoch $warmup_epochs --smoothing $smth --data_path $data_path --labels_path $labels_path --nb_classes $nb_classes --log_dir $log_dir --num_workers $num_workers"
 
-                        if [ "$global_pool" == "True" ]; then
+                        if [ "$global_pool" = "True" ]; then
                             cmd=$cmd" --global_pool"
+                        fi
+
+                        if [ "$attention_pool" = "True" ]; then
+                            cmd=$cmd" --attention_pool"
                         fi
 
                         if [ "$wandb" = "True" ]; then

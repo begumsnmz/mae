@@ -35,6 +35,7 @@ import util.misc as misc
 from util.datasets import build_dataset
 from util.pos_embed import interpolate_pos_embed
 from util.misc import NativeScalerWithGradNormCount as NativeScaler
+from util.callbacks import EarlyStop
 
 import models_vit
 
@@ -110,6 +111,12 @@ def get_args_parser():
     parser.add_argument('--warmup_epochs', type=int, default=5, metavar='N',
                         help='epochs to warmup LR')
 
+    # Callback parameters
+    parser.add_argument('--patience', default=-1, type=float,
+                        help='Early stopping whether val is worse than train for specified nb of epochs (default: -1, i.e. no early stopping)')
+    parser.add_argument('--max_delta', default=0, type=int,
+                        help='Early stopping threshold (val has to be worse than (train+delta)) (default: 0)')
+
     # Criterion parameters
     parser.add_argument('--smoothing', type=float, default=0.1,
                         help='Label smoothing (default: 0.1)')
@@ -142,6 +149,7 @@ def get_args_parser():
     parser.add_argument('--finetune', default='',
                         help='finetune from checkpoint')
     parser.add_argument('--global_pool', action='store_true', default=False)
+    parser.add_argument('--attention_pool', action='store_true', default=False)
     parser.add_argument('--cls_token', action='store_false', dest='global_pool',
                         help='Use class token instead of global pool for classification')
 
@@ -152,6 +160,8 @@ def get_args_parser():
                         help='labels path')
     parser.add_argument('--nb_classes', default=2, type=int,
                         help='number of the classification types')
+    parser.add_argument('--pos_label', default=0, type=int,
+                        help='classification type with the smallest count')
 
     parser.add_argument('--output_dir', default='',
                         help='path where to save, empty for no saving')
@@ -188,9 +198,36 @@ def get_args_parser():
     return parser
 
 
+def attention_forward_wrapper(attn_obj):
+    """
+    Modified version of def forward() of class Attention() in timm.models.vision_transformer
+    """
+    def my_forward(x):
+        B, N, C = x.shape # C = embed_dim
+        # (3, B, Heads, N, head_dim)
+        qkv = attn_obj.qkv(x).reshape(B, N, 3, attn_obj.num_heads, C // attn_obj.num_heads).permute(2, 0, 3, 1, 4)
+        q, k, v = qkv.unbind(0)   # make torchscript happy (cannot use tensor as tuple)
+
+        # (B, Heads, N, N)
+        attn = (q @ k.transpose(-2, -1)) * attn_obj.scale
+        attn = attn.softmax(dim=-1)
+        attn = attn_obj.attn_drop(attn)
+        # (B, Heads, N, N)
+        attn_obj.attn_map = attn # this was added 
+
+        # (B, N, Heads*head_dim)
+        x = (attn @ v).transpose(1, 2).reshape(B, N, C)
+        x = attn_obj.proj(x)
+        x = attn_obj.proj_drop(x)
+        return x
+    return my_forward
+
 def main(args):
     args.input_size = (args.input_channels, args.input_electrodes, args.time_steps)
     args.patch_size = (args.patch_height, args.patch_width)
+
+    if args.attention_pool:
+        args.global_pool = "attention_pool"
 
     # misc.init_distributed_mode(args)
     args.distributed = False
@@ -231,21 +268,27 @@ def main(args):
     # dataset_val = ConcatDataset([dataset_val, dataset_h_validation_sub])
     
     dataset_train = SignalDataset(augment=True, args=args)
-    # val balanced
+    # VAL BALANCED
     # args.data_path = "/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/ecgs_val_CAD_all_balanced_noBase_gn.pt"
     # args.labels_path = "/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/labelsOneHot/labels_val_CAD_all_balanced.pt"
-    # val unbalanced
+    # VAL UNBALANCED
     # args.data_path = "/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/ecgs_val_ecg_imaging_noBase_gn.pt"
     # args.labels_path = "/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/labelsOneHot/labels_val_CAD_all.pt"
-    # test unbalanced
-    args.data_path = "/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/ecgs_test_ecg_imaging_noBase_gn.pt"
-    args.labels_path = "/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/labelsOneHot/labels_test_CAD_all.pt"
+    args.data_path = "/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/ecgs_val_BMI_noBase_gn.pt"
+    args.labels_path = "/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/labelsOneHot/labels_val_BMI.pt"
+    # TEST UNBALANCED
+    # args.data_path = "/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/ecgs_test_ecg_imaging_noBase_gn.pt"
+    # args.labels_path = "/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/labelsOneHot/labels_test_CAD_all.pt"
+    # args.data_path = "/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/ecgs_test_BMI_noBase_gn.pt"
+    # args.labels_path = "/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/labelsOneHot/labels_test_BMI.pt"
     dataset_val = SignalDataset(transform=True, augment=False, args=args)
 
-    # train CAD balanced
-    # class_weights = 4030.0 / (2.0 * torch.Tensor([2015.0, 2015.0])) # total_nb_samples / (nb_classes * samples_per_class)
-    # train CAD unbalanced
-    class_weights = 28030.0 / (2.0 * torch.Tensor([26015.0, 2015.0])) # total_nb_samples / (nb_classes * samples_per_class)
+    # train balanced
+    # class_weights = 4030.0 / (2.0 * torch.Tensor([2015.0, 2015.0])) # CAD total_nb_samples / (nb_classes * samples_per_class) 
+    class_weights = 424.0 / (2.0 * torch.Tensor([212.0, 212.0])) # BMI total_nb_samples / (nb_classes * samples_per_class) 
+    # train unbalanced
+    # class_weights = 28030.0 / (2.0 * torch.Tensor([26015.0, 2015.0])) # CAD total_nb_samples / (nb_classes * samples_per_class)
+    # class_weights = 5130.0 / (2.0 * torch.Tensor([2565.0, 2565.0])) # BM total_nb_samples / (nb_classes * samples_per_class) 
 
     print("Training set size: ", len(dataset_train))
     print("Validation set size: ", len(dataset_val))
@@ -318,6 +361,7 @@ def main(args):
         drop_path_rate=args.drop_path,
         global_pool=args.global_pool,
     )
+    model.blocks[-1].attn.forward = attention_forward_wrapper(model.blocks[-1].attn) # required to read out the attention map of the last layer
 
     if args.finetune and not args.eval:
         checkpoint = torch.load(args.finetune, map_location='cpu')
@@ -337,7 +381,9 @@ def main(args):
         msg = model.load_state_dict(checkpoint_model, strict=False)
         print(msg)
 
-        if args.global_pool:
+        if args.global_pool == "attention_pool":
+            assert set(msg.missing_keys) == {'head.weight', 'head.bias', 'fc_norm.weight', 'fc_norm.bias', 'attention_pool.out_proj.weight', 'attention_pool.in_proj_weight', 'attention_pool.out_proj.bias', 'attention_pool.in_proj_bias'}
+        elif args.global_pool:
             assert set(msg.missing_keys) == {'head.weight', 'head.bias', 'fc_norm.weight', 'fc_norm.bias'}
         else:
             assert set(msg.missing_keys) == {'head.weight', 'head.bias'}
@@ -403,7 +449,7 @@ def main(args):
 
             misc.load_model(args=args, model_without_ddp=model_without_ddp, optimizer=optimizer, loss_scaler=loss_scaler)
 
-            test_stats = evaluate(data_loader_val, model, device)
+            test_stats = evaluate(data_loader_val, model, device, args=args)
             print(f"Accuracy / F1 / AUROC of the network on the {len(dataset_val)} test images: {test_stats['acc1']:.1f}% / {test_stats['f1']:.1f}% / {test_stats['auroc']:.1f}%")
 
             if log_writer is not None:
@@ -427,6 +473,9 @@ def main(args):
         exit(0)
 
     print(f"Start training for {args.epochs} epochs")
+    # Define callbacks
+    early_stop = EarlyStop(patience=args.patience, max_delta=args.max_delta)
+    
     start_time = time.time()
     max_accuracy, max_f1, max_auroc = 0.0, 0.0, 0.0
     for epoch in range(args.start_epoch, args.epochs):
@@ -444,7 +493,9 @@ def main(args):
                 args=args, model=model, model_without_ddp=model_without_ddp, optimizer=optimizer,
                 loss_scaler=loss_scaler, epoch=epoch)
 
-        test_stats = evaluate(data_loader_val, model, device)
+        test_stats = evaluate(data_loader_val, model, device, args=args)
+        if early_stop.evaluate_metric(val_metric=test_stats["auroc"]):
+            break
         print(f"Accuracy / F1 / AUROC of the network on the {len(dataset_val)} test images: {test_stats['acc1']:.1f}% / {test_stats['f1']:.1f}% / {test_stats['auroc']:.1f}%")
         max_accuracy = max(max_accuracy, test_stats["acc1"])
         max_f1 = max(max_f1, test_stats['f1'])

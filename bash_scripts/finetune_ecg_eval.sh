@@ -40,38 +40,40 @@ jitter_sigma="0.2"
 rescaling_sigma="0.5"
 ft_surr_phase_noise="0.075"
 
-drop_path=(0.05)
+drop_path=(0.2)
 layer_decay="0.75"
 
 # Optimizer parameters
-blr=(3e-6)
-min_lr="1e-7"
-weight_decay=(0.1)
+blr=(3e-5)
+min_lr="0.0"
+weight_decay=(0.05)
 
 # Criterion parameters
-smoothing=(0.2)
+smoothing=(0.1)
 
 # Dataset parameters
-data_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/ecgs_train_CAD_all_balanced_noBase_gn.pt"
-labels_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/labelsOneHot/labels_train_CAD_all_balanced.pt"
-# data_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/ecgs_train_ecg_imaging_noBase_gn.pt"
-# labels_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/labelsOneHot/labels_train_CAD_all.pt"
+# data_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/ecgs_train_CAD_all_balanced_noBase_gn.pt"
+# labels_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/labelsOneHot/labels_train_CAD_all_balanced.pt"
+data_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/ecgs_train_ecg_imaging_noBase_gn.pt"
+labels_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/labelsOneHot/labels_train_CAD_all.pt"
 nb_classes="2"
+pos_label="0"
 
 global_pool=(True)
+attention_pool=(True)
 num_workers="24"
 
 # Log specifications
 save_output="False"
 wandb="True"
-wandb_project="MAE_ECG_Fin_Tiny_CAD"
+wandb_project="MAE_ECG_Fin_Tiny_BMI"
 
 # Pretraining specifications
 pre_batch_size=(128)
 pre_blr=(1e-5)
 
-folder="ecg/noExternal"
-subfolder=$model_size"/1d/t2500/p"$patch_height"x"$patch_width"/wd"$weight_decay"/m0.8/trainUnbalanced"
+folder="ecg/BMI/MM"
+subfolder=$model_size"/1d/t2500/p"$patch_height"x"$patch_width"/wd"$weight_decay"/dp"$drop_path"/smth"$smoothing"/m0.8/atp"
 
 pre_data="b"$pre_batch_size"_blr"$pre_blr
 log_dir="/home/guests/oezguen_turgut/sprai/mae_he/mae/logs/fin/"$folder"/"$subfolder"/fin_b"$(($batch_size*$accum_iter))"_blr"$blr"_"$pre_data
@@ -79,10 +81,14 @@ log_dir="/home/guests/oezguen_turgut/sprai/mae_he/mae/logs/fin/"$folder"/"$subfo
 # As filename: State the checkpoint for the inference of a specific model
 # or state the (final) epoch for the inference of all models up to this epoch
 resume="/home/guests/oezguen_turgut/sprai/mae_he/mae/output/fin/"$folder"/"$subfolder"/fin_b"$(($batch_size*$accum_iter))"_blr"$blr"_"$pre_data"/49"
-cmd="python3 main_finetune.py --eval --resume $resume --seed $seed --jitter_sigma $jitter_sigma --rescaling_sigma $rescaling_sigma --ft_surr_phase_noise $ft_surr_phase_noise --input_channels $input_channels --input_electrodes $input_electrodes --time_steps $time_steps --patch_height $patch_height --patch_width $patch_width --model $model --batch_size $batch_size --epochs $epochs --accum_iter $accum_iter --drop_path $drop_path --weight_decay $weight_decay --layer_decay $layer_decay --min_lr $min_lr --blr $blr --warmup_epoch $warmup_epochs --smoothing $smoothing --data_path $data_path --labels_path $labels_path --nb_classes $nb_classes --log_dir $log_dir --num_workers $num_workers"
+cmd="python3 main_finetune.py --eval --resume $resume --pos_label $pos_label --seed $seed --jitter_sigma $jitter_sigma --rescaling_sigma $rescaling_sigma --ft_surr_phase_noise $ft_surr_phase_noise --input_channels $input_channels --input_electrodes $input_electrodes --time_steps $time_steps --patch_height $patch_height --patch_width $patch_width --model $model --batch_size $batch_size --epochs $epochs --accum_iter $accum_iter --drop_path $drop_path --weight_decay $weight_decay --layer_decay $layer_decay --min_lr $min_lr --blr $blr --warmup_epoch $warmup_epochs --smoothing $smoothing --data_path $data_path --labels_path $labels_path --nb_classes $nb_classes --log_dir $log_dir --num_workers $num_workers"
 
-if [ "$global_pool" == "True" ]; then
+if [ "$global_pool" = "True" ]; then
     cmd=$cmd" --global_pool"
+fi
+
+if [ "$attention_pool" = "True" ]; then
+    cmd=$cmd" --attention_pool"
 fi
 
 if [ "$wandb" = "True" ]; then
