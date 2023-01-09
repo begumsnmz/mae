@@ -158,6 +158,10 @@ def get_args_parser():
                         help='dataset path')
     parser.add_argument('--labels_path', default='_.pt', type=str,
                         help='labels path')
+    parser.add_argument('--val_data_path', default='_.pt', type=str,
+                        help='validation dataset path')
+    parser.add_argument('--val_labels_path', default='_.pt', type=str,
+                        help='validation labels path')
     parser.add_argument('--nb_classes', default=2, type=int,
                         help='number of the classification types')
     parser.add_argument('--pos_label', default=0, type=int,
@@ -267,25 +271,11 @@ def main(args):
     #     dataset_h_validation_sub = Subset(dataset_h_validation, list(range(int(34*1), int(41*1))))
     # dataset_val = ConcatDataset([dataset_val, dataset_h_validation_sub])
     
-    dataset_train = SignalDataset(augment=True, args=args)
-    # VAL BALANCED
-    # args.data_path = "/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/ecgs_val_CAD_all_balanced_noBase_gn.pt"
-    # args.labels_path = "/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/labelsOneHot/labels_val_CAD_all_balanced.pt"
-    # VAL UNBALANCED
-    # args.data_path = "/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/ecgs_val_ecg_imaging_noBase_gn.pt"
-    # args.labels_path = "/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/labelsOneHot/labels_val_CAD_all.pt"
-    args.data_path = "/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/ecgs_val_BMI_noBase_gn.pt"
-    args.labels_path = "/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/labelsOneHot/labels_val_BMI.pt"
-    # TEST UNBALANCED
-    # args.data_path = "/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/ecgs_test_ecg_imaging_noBase_gn.pt"
-    # args.labels_path = "/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/labelsOneHot/labels_test_CAD_all.pt"
-    # args.data_path = "/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/ecgs_test_BMI_noBase_gn.pt"
-    # args.labels_path = "/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/labelsOneHot/labels_test_BMI.pt"
-    dataset_val = SignalDataset(transform=True, augment=False, args=args)
+    dataset_train = SignalDataset(data_path=args.data_path, labels_path=args.labels_path, augment=True, args=args)
+    dataset_val = SignalDataset(data_path=args.val_data_path, labels_path=args.val_labels_path, transform=True, augment=False, args=args)
 
     # train balanced
-    # class_weights = 4030.0 / (2.0 * torch.Tensor([2015.0, 2015.0])) # CAD total_nb_samples / (nb_classes * samples_per_class) 
-    class_weights = 424.0 / (2.0 * torch.Tensor([212.0, 212.0])) # BMI total_nb_samples / (nb_classes * samples_per_class) 
+    class_weights = 2.0 / (2.0 * torch.Tensor([1.0, 1.0])) # total_nb_samples / (nb_classes * samples_per_class)
     # train unbalanced
     # class_weights = 28030.0 / (2.0 * torch.Tensor([26015.0, 2015.0])) # CAD total_nb_samples / (nb_classes * samples_per_class)
     # class_weights = 5130.0 / (2.0 * torch.Tensor([2565.0, 2565.0])) # BM total_nb_samples / (nb_classes * samples_per_class) 
@@ -423,7 +413,10 @@ def main(args):
     loss_scaler = NativeScaler()
 
     class_weights = class_weights.to(device=device)
-    if mixup_fn is not None:
+    if args.nb_classes == 1:
+        # regression, else classification
+        criterion = torch.nn.MSELoss()
+    elif mixup_fn is not None:
         # smoothing is handled with mixup label transform
         criterion = SoftTargetCrossEntropy()
     elif args.smoothing > 0.:
@@ -450,24 +443,44 @@ def main(args):
             misc.load_model(args=args, model_without_ddp=model_without_ddp, optimizer=optimizer, loss_scaler=loss_scaler)
 
             test_stats = evaluate(data_loader_val, model, device, args=args)
-            print(f"Accuracy / F1 / AUROC of the network on the {len(dataset_val)} test images: {test_stats['acc1']:.1f}% / {test_stats['f1']:.1f}% / {test_stats['auroc']:.1f}%")
+
+            if args.nb_classes > 1:
+                # classification
+                print(f"Accuracy / F1 / AUROC of the network on the {len(dataset_val)} test images: {test_stats['acc1']:.1f}% / {test_stats['f1']:.1f}% / {test_stats['auroc']:.1f}%")
+            else:
+                # regression
+                print(f"Mean Absolute Error (MAE) / Root Mean Squared Error (RMSE) of the network on the {len(dataset_val)} test images: {test_stats['mae']:.4f}% / {test_stats['rmse']:.4f}%")
 
             if log_writer is not None:
-                log_writer.add_scalar('perf/test_acc1', test_stats['acc1'], epoch)
-                #log_writer.add_scalar('perf/test_acc5', test_stats['acc5'], epoch)
-                log_writer.add_scalar('perf/test_acc', test_stats['acc'], epoch)
-                log_writer.add_scalar('perf/test_f1', test_stats['f1'], epoch)
-                log_writer.add_scalar('perf/test_auroc', test_stats['auroc'], epoch)
+                if args.nb_classes > 1:
+                    # classification
+                    log_writer.add_scalar('perf/test_acc1', test_stats['acc1'], epoch)
+                    #log_writer.add_scalar('perf/test_acc5', test_stats['acc5'], epoch)
+                    log_writer.add_scalar('perf/test_acc', test_stats['acc'], epoch)
+                    log_writer.add_scalar('perf/test_f1', test_stats['f1'], epoch)
+                    log_writer.add_scalar('perf/test_auroc', test_stats['auroc'], epoch)
+                else:
+                    # regression
+                    log_writer.add_scalar('perf/test_mae', test_stats['mae'], epoch)
+                    log_writer.add_scalar('perf/test_rmse', test_stats['rmse'], epoch)
+                    # log_writer.add_scalar('perf/test_my_mae', test_stats['my_mae'], epoch)
                 log_writer.add_scalar('perf/test_loss', test_stats['loss'], epoch)
 
             if args.wandb == True:
                 training_history = {'epoch' : epoch,
-                                    'test_acc1' : test_stats['acc1'],
-                                    #'test_acc5' : test_stats['acc5'],
-                                    'test_acc' : test_stats['acc'],
-                                    'test_f1' : test_stats['f1'],
-                                    'test_auroc' : test_stats['auroc'],
                                     'test_loss' : test_stats['loss']}
+                if args.nb_classes > 1:
+                    # classification
+                    training_history['test_acc1'] = test_stats['acc1']
+                    # training_history['test_acc5'] = test_stats['acc5']
+                    training_history['test_acc'] = test_stats['acc']
+                    training_history['test_f1'] = test_stats['f1']
+                    training_history['test_auroc'] = test_stats['auroc']
+                else:
+                    # regression
+                    training_history['test_mae'] = test_stats['mae']
+                    training_history['test_rmse'] = test_stats['rmse']
+                    # training_history['test_my_mae'] = test_stats['my_mae']
                 wandb.log(training_history)
         
         exit(0)
@@ -478,6 +491,7 @@ def main(args):
     
     start_time = time.time()
     max_accuracy, max_f1, max_auroc = 0.0, 0.0, 0.0
+    min_mae, min_rmse = np.inf, np.inf
     for epoch in range(args.start_epoch, args.epochs):
         if True: #args.distributed:
             data_loader_train.sampler.set_epoch(epoch)
@@ -494,30 +508,55 @@ def main(args):
                 loss_scaler=loss_scaler, epoch=epoch)
 
         test_stats = evaluate(data_loader_val, model, device, args=args)
-        if early_stop.evaluate_metric(val_metric=test_stats["auroc"]):
+        if args.nb_classes != 1 and early_stop.evaluate_metric(val_metric=test_stats["auroc"]):
             break
-        print(f"Accuracy / F1 / AUROC of the network on the {len(dataset_val)} test images: {test_stats['acc1']:.1f}% / {test_stats['f1']:.1f}% / {test_stats['auroc']:.1f}%")
-        max_accuracy = max(max_accuracy, test_stats["acc1"])
-        max_f1 = max(max_f1, test_stats['f1'])
-        max_auroc = max(max_auroc, test_stats['auroc'])
-        print(f'Max Accuracy / F1 / AUROC: {max_accuracy:.2f}% / {max_f1:.2f}% / {max_auroc:.2f}%\n')
+        elif early_stop.evaluate_loss(val_loss=test_stats["loss"]):
+            break
+
+        if args.nb_classes > 1:
+            # classification
+            print(f"Accuracy / F1 / AUROC of the network on the {len(dataset_val)} test images: {test_stats['acc1']:.1f}% / {test_stats['f1']:.1f}% / {test_stats['auroc']:.1f}%")
+            max_accuracy = max(max_accuracy, test_stats["acc1"])
+            max_f1 = max(max_f1, test_stats['f1'])
+            max_auroc = max(max_auroc, test_stats['auroc'])
+            print(f'Max Accuracy / F1 / AUROC: {max_accuracy:.2f}% / {max_f1:.2f}% / {max_auroc:.2f}%\n')
+        else:
+            # regression
+            print(f"Mean Absolute Error (MAE) / Root Mean Squared Error (RMSE) of the network on the {len(dataset_val)} test images: {test_stats['mae']:.4f}% / {test_stats['rmse']:.4f}%")
+            min_mae = max(min_mae, test_stats['mae'])
+            min_rmse = max(min_rmse, test_stats['rmse'])
+            print(f'Min Mean Absolute Error (MAE) / Root Mean Squared Error (RMSE): {min_mae:.4f}% / {min_rmse:.4f}%\n')            
 
         if log_writer is not None:
-            log_writer.add_scalar('perf/test_acc1', test_stats['acc1'], epoch)
-            #log_writer.add_scalar('perf/test_acc5', test_stats['acc5'], epoch)
-            log_writer.add_scalar('perf/test_acc', test_stats['acc'], epoch)
-            log_writer.add_scalar('perf/test_f1', test_stats['f1'], epoch)
-            log_writer.add_scalar('perf/test_auroc', test_stats['auroc'], epoch)
+            if args.nb_classes > 1:
+                # classification
+                log_writer.add_scalar('perf/test_acc1', test_stats['acc1'], epoch)
+                #log_writer.add_scalar('perf/test_acc5', test_stats['acc5'], epoch)
+                log_writer.add_scalar('perf/test_acc', test_stats['acc'], epoch)
+                log_writer.add_scalar('perf/test_f1', test_stats['f1'], epoch)
+                log_writer.add_scalar('perf/test_auroc', test_stats['auroc'], epoch)
+            else:
+                # regression
+                log_writer.add_scalar('perf/test_mae', test_stats['mae'], epoch)
+                log_writer.add_scalar('perf/test_rmse', test_stats['rmse'], epoch)
+                # log_writer.add_scalar('perf/test_my_mae', test_stats['my_mae'], epoch)
             log_writer.add_scalar('perf/test_loss', test_stats['loss'], epoch)
 
             if args.wandb == True:
                 training_history = {'epoch' : epoch,
-                                    'test_acc1' : test_stats['acc1'],
-                                    #'test_acc5' : test_stats['acc5'],
-                                    'test_acc' : test_stats['acc'],
-                                    'test_f1' : test_stats['f1'],
-                                    'test_auroc' : test_stats['auroc'],
                                     'test_loss' : test_stats['loss']}
+                if args.nb_classes > 1:
+                    # classification
+                    training_history['test_acc1'] = test_stats['acc1']
+                    # training_history['test_acc5'] = test_stats['acc5']
+                    training_history['test_acc'] = test_stats['acc']
+                    training_history['test_f1'] = test_stats['f1']
+                    training_history['test_auroc'] = test_stats['auroc']
+                else:
+                    # regression
+                    training_history['test_mae'] = test_stats['mae']
+                    training_history['test_rmse'] = test_stats['rmse']
+                    # training_history['test_my_mae'] = test_stats['my_mae']
                 wandb.log(training_history)
 
         log_stats = {**{f'train_{k}': v for k, v in train_stats.items()},

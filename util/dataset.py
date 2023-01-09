@@ -14,19 +14,15 @@ import util.augmentations as augmentations
 
 class SignalDataset(Dataset):
     """Fast EEGDataset (fetching prepared data and labels from files)"""
-    def __init__(self, transform=False, augment=False, transfer=False, args=None) -> None:
+    def __init__(self, data_path, labels_path, transform=False, augment=False, args=None) -> None:
         """load data and labels from files"""
         self.transform = transform
         self.augment = augment
         
         self.args = args
 
-        if transfer == False:
-            self.data = torch.load(args.data_path, map_location=torch.device('cpu')) # load to ram
-            self.labels = torch.load(args.labels_path, map_location=torch.device('cpu')) # load to ram
-        else:
-            self.data = torch.load(args.transfer_data_path, map_location=torch.device('cpu')) # load to ram
-            self.labels = torch.load(args.transfer_labels_path, map_location=torch.device('cpu')) # load to ram
+        self.data = torch.load(data_path, map_location=torch.device('cpu')) # load to ram
+        self.labels = torch.load(labels_path, map_location=torch.device('cpu')) # load to ram
 
     def __len__(self) -> int:
         """return the number of samples in the dataset"""
@@ -56,10 +52,8 @@ class SignalDataset(Dataset):
                                           #augmentations.SignFlip(prob=0.33)
                                           ])
             data = augment(data)
-
-        # label = self.labels[idx]
-        # data = torch.sin(math.pi*torch.linspace(0, 4, self.args.input_size[-1])).unsqueeze(dim=0).repeat(65, 1).unsqueeze(dim=0) \
-        #         + torch.sin(math.pi*torch.linspace(0, 8, self.args.input_size[-1])).unsqueeze(dim=0).repeat(65, 1).unsqueeze(dim=0) \
-        #         + torch.sin(math.pi*torch.linspace(0, 16, self.args.input_size[-1])).unsqueeze(dim=0).repeat(65, 1).unsqueeze(dim=0)
-
-        return data, label.type(torch.LongTensor).argmax(dim=-1)
+        
+        if self.args.nb_classes == 1:
+            return data, torch.tensor([label], dtype=torch.float32)
+        else:
+            return data, label

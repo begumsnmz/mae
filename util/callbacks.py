@@ -13,7 +13,7 @@ class EarlyStop():
         if self.patience == -1:
             return False
         
-        if val_loss < self.min_val_loss:
+        if val_loss <= self.min_val_loss:
             self.min_val_loss = val_loss
             self.counter = 0
         elif val_loss > (self.min_val_loss + self.max_delta):
@@ -27,7 +27,7 @@ class EarlyStop():
         if self.patience == -1:
             return False
         
-        if val_metric > self.max_val_metric:
+        if val_metric >= self.max_val_metric:
             self.max_val_metric = val_metric
             self.counter = 0
         elif val_metric < (self.max_val_metric - self.max_delta):

@@ -18,14 +18,14 @@ conda activate mae
 
 # Basic parameters seed = [0, 101, 202, 303, 404]
 seed="0"
-batch_size=(32)
+batch_size=(16)
 accum_iter=(1)
 
-epochs="50"
+epochs="400"
 warmup_epochs="5"
 
 # Callback parameters
-patience="4"
+patience="25"
 max_delta="0"
 
 # Model parameters
@@ -47,20 +47,40 @@ drop_path=(0.05)
 layer_decay="0.75"
 
 # Optimizer parameters
-blr=(3e-5)
+blr=(3e-6)
 min_lr="0.0"
-weight_decay=(0.1)
+weight_decay=(0.2)
 
 # Criterion parameters
 smoothing=(0.2)
 
 # Dataset parameters
+# Training balanced
 # data_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/ecgs_train_CAD_all_balanced_noBase_gn.pt"
-# labels_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/labelsOneHot/labels_train_CAD_all_balanced.pt"
-data_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/ecgs_train_BMI_balanced_noBase_gn.pt"
-labels_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/labelsOneHot/labels_train_BMI_balanced.pt"
-nb_classes="2"
-pos_label="0"
+# labels_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/labels_train_CAD_all_balanced.pt"
+# nb_classes="2"
+# data_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/ecgs_train_BMI_balanced_noBase_gn.pt"
+# labels_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/labels_train_BMI_balanced.pt"
+# nb_classes="2"
+# val_data_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/ecgs_train_ecg_imaging_noBase_gn.pt"
+# val_labels_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/labels_train_infarct_future.pt"
+# num_classes="2"
+data_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/ecgs_train_ecg_imaging_noBase_gn.pt"
+labels_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/labelsOneHot/labels_train_LVM_regression_div300.pt"
+nb_classes="1"
+
+# Validation unbalanced
+# val_data_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/ecgs_val_ecg_imaging_noBase_gn.pt"
+# val_labels_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/labels_val_CAD_all.pt"
+# pos_label="1"
+# val_data_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/ecgs_val_BMI_noBase_gn.pt"
+# val_labels_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/labels_val_BMI.pt"
+# pos_label="0"
+# val_data_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/ecgs_val_ecg_imaging_noBase_gn.pt"
+# val_labels_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/labels_val_infarct_future.pt"
+# pos_label="1"
+val_data_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/ecgs_val_ecg_imaging_noBase_gn.pt"
+val_labels_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/labelsOneHot/labels_val_LVM_regression_div300.pt"
 
 global_pool=(False)
 attention_pool=(True)
@@ -69,7 +89,7 @@ num_workers="24"
 # Log specifications
 save_output="False"
 wandb="True"
-wandb_project="MAE_ECG_Fin_Tiny_BMI"
+wandb_project="MAE_ECG_Fin_Tiny_LVM"
 
 # Pretraining specifications
 pre_batch_size=(128)
@@ -95,20 +115,24 @@ do
                     for smth in "${smoothing[@]}"
                     do
 
-                        folder="ecg/BMI/MAE"
+                        folder="ecg/CAD/MAE"
                         subfolder=($model_size"/1d/t2500/p"$patch_height"x"$patch_width"/wd"$weight_decay"/dp"$dp"/smth"$smth"/m0.8/atp")
 
                         pre_data="b"$pre_batch_size"_blr"$pre_blr
                         # finetune="/home/guests/oezguen_turgut/sprai/mae_he/mae/output/pre/"$folder"/"$subfolder"/pre_"$pre_data"/checkpoint-399.pth"
-                        # finetune="/home/guests/oezguen_turgut/ECGMultimodalContrastiveLearning/oezguen/checkpoints/mm_v230_mae_checkpoint.pth"
-                        finetune="/home/guests/oezguen_turgut/ECGMultimodalContrastiveLearning/pretrained_checkpoints/tiny/v1/checkpoint-399.pth"
+                        finetune="/home/guests/oezguen_turgut/ECGMultimodalContrastiveLearning/oezguen/checkpoints/mm_v230_mae_checkpoint.pth"
+                        # finetune="/home/guests/oezguen_turgut/ECGMultimodalContrastiveLearning/pretrained_checkpoints/tiny/v1/checkpoint-399.pth"
 
                         output_dir="/home/guests/oezguen_turgut/sprai/mae_he/mae/output/fin/"$folder"/"$subfolder"/fin_b"$(($bs*$acc_it))"_blr"$lr"_"$pre_data
                         log_dir="/home/guests/oezguen_turgut/sprai/mae_he/mae/logs/fin/"$folder"/"$subfolder"/fin_b"$(($bs*$acc_it))"_blr"$lr"_"$pre_data
 
                         # resume="/home/guests/oezguen_turgut/sprai/mae_he/mae/output/fin/"$folder"/"$subfolder"/fin_b"$bs"_blr"$lr"_"$pre_data"/checkpoint-78.pth"
 
-                        cmd="python3 main_finetune.py --pos_label $pos_label --seed $seed --jitter_sigma $jitter_sigma --rescaling_sigma $rescaling_sigma --ft_surr_phase_noise $ft_surr_phase_noise --input_channels $input_channels --input_electrodes $input_electrodes --time_steps $time_steps --patch_height $patch_height --patch_width $patch_width --model $model --batch_size $bs --epochs $epochs --patience $patience --max_delta $max_delta --accum_iter $acc_it --drop_path $dp --weight_decay $wd --layer_decay $layer_decay --min_lr $min_lr --blr $lr --warmup_epoch $warmup_epochs --smoothing $smth --data_path $data_path --labels_path $labels_path --nb_classes $nb_classes --log_dir $log_dir --num_workers $num_workers"
+                        cmd="python3 main_finetune.py --finetune $finetune --seed $seed --jitter_sigma $jitter_sigma --rescaling_sigma $rescaling_sigma --ft_surr_phase_noise $ft_surr_phase_noise --input_channels $input_channels --input_electrodes $input_electrodes --time_steps $time_steps --patch_height $patch_height --patch_width $patch_width --model $model --batch_size $bs --epochs $epochs --patience $patience --max_delta $max_delta --accum_iter $acc_it --drop_path $dp --weight_decay $wd --layer_decay $layer_decay --min_lr $min_lr --blr $lr --warmup_epoch $warmup_epochs --smoothing $smth --data_path $data_path --labels_path $labels_path --val_data_path $val_data_path --val_labels_path $val_labels_path --nb_classes $nb_classes --log_dir $log_dir --num_workers $num_workers"
+
+                        if [ ! -z "$pos_label" ]; then
+                            cmd=$cmd" --pos_label $pos_label"
+                        fi
 
                         if [ "$global_pool" = "True" ]; then
                             cmd=$cmd" --global_pool"
