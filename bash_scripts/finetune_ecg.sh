@@ -43,13 +43,13 @@ jitter_sigma="0.2"
 rescaling_sigma="0.5"
 ft_surr_phase_noise="0.075"
 
-drop_path=(0.05)
+drop_path=(0.2)
 layer_decay="0.75"
 
 # Optimizer parameters
-blr=(3e-6)
+blr=(1e-7)
 min_lr="0.0"
-weight_decay=(0.2)
+weight_decay=(0.1)
 
 # Criterion parameters
 smoothing=(0.2)
@@ -82,7 +82,7 @@ nb_classes="1"
 val_data_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/ecgs_val_ecg_imaging_noBase_gn.pt"
 val_labels_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/labelsOneHot/labels_val_LVM_regression_div300.pt"
 
-global_pool=(False)
+global_pool=(True)
 attention_pool=(True)
 num_workers="24"
 

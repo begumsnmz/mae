@@ -381,6 +381,13 @@ def main(args):
         # manually initialize fc layer
         trunc_normal_(model.head.weight, std=0.01)#2e-5)
 
+    # # freeze all but the head
+    # print("Every layer but the head frozen")
+    # for _, p in model.named_parameters():
+    #     p.requires_grad = False
+    # for _, p in model.head.named_parameters():
+    #     p.requires_grad = True
+    
     model.to(device)
 
     model_without_ddp = model
@@ -449,7 +456,8 @@ def main(args):
                 print(f"Accuracy / F1 / AUROC of the network on the {len(dataset_val)} test images: {test_stats['acc1']:.1f}% / {test_stats['f1']:.1f}% / {test_stats['auroc']:.1f}%")
             else:
                 # regression
-                print(f"Mean Absolute Error (MAE) / Root Mean Squared Error (RMSE) of the network on the {len(dataset_val)} test images: {test_stats['mae']:.4f}% / {test_stats['rmse']:.4f}%")
+                print(f"Mean Absolute Error (MAE) / Root Mean Squared Error (RMSE) / Pearson Correlation Coefficient (PCC) of the network on the {len(dataset_val)} test images:\
+                     {test_stats['mae']:.4f} / {test_stats['rmse']:.4f} / {test_stats['pcc']:.2f}")
 
             if log_writer is not None:
                 if args.nb_classes > 1:
@@ -463,6 +471,7 @@ def main(args):
                     # regression
                     log_writer.add_scalar('perf/test_mae', test_stats['mae'], epoch)
                     log_writer.add_scalar('perf/test_rmse', test_stats['rmse'], epoch)
+                    log_writer.add_scalar('perf/test_pcc', test_stats['pcc'], epoch)
                     # log_writer.add_scalar('perf/test_my_mae', test_stats['my_mae'], epoch)
                 log_writer.add_scalar('perf/test_loss', test_stats['loss'], epoch)
 
@@ -480,6 +489,7 @@ def main(args):
                     # regression
                     training_history['test_mae'] = test_stats['mae']
                     training_history['test_rmse'] = test_stats['rmse']
+                    training_history['test_pcc'] = test_stats['pcc']
                     # training_history['test_my_mae'] = test_stats['my_mae']
                 wandb.log(training_history)
         
@@ -493,6 +503,12 @@ def main(args):
     max_accuracy, max_f1, max_auroc = 0.0, 0.0, 0.0
     min_mae, min_rmse = np.inf, np.inf
     for epoch in range(args.start_epoch, args.epochs):
+        # if epoch == 2:
+        #     for _, p in model.named_parameters():
+        #         p.requires_grad = True
+        # yo = [n for n, p in model.named_parameters() if p.requires_grad]
+        # print(f"# REQUIRED PARAMS: {len(yo)}")
+
         if True: #args.distributed:
             data_loader_train.sampler.set_epoch(epoch)
         train_stats = train_one_epoch(
@@ -522,10 +538,11 @@ def main(args):
             print(f'Max Accuracy / F1 / AUROC: {max_accuracy:.2f}% / {max_f1:.2f}% / {max_auroc:.2f}%\n')
         else:
             # regression
-            print(f"Mean Absolute Error (MAE) / Root Mean Squared Error (RMSE) of the network on the {len(dataset_val)} test images: {test_stats['mae']:.4f}% / {test_stats['rmse']:.4f}%")
+            print(f"Mean Absolute Error (MAE) / Root Mean Squared Error (RMSE) / Pearson Correlation Coefficient (PCC) of the network on the {len(dataset_val)} test images:\
+                 {test_stats['mae']:.4f} / {test_stats['rmse']:.4f} / {test_stats['pcc']:.2f}")
             min_mae = max(min_mae, test_stats['mae'])
             min_rmse = max(min_rmse, test_stats['rmse'])
-            print(f'Min Mean Absolute Error (MAE) / Root Mean Squared Error (RMSE): {min_mae:.4f}% / {min_rmse:.4f}%\n')            
+            print(f'Min Mean Absolute Error (MAE) / Root Mean Squared Error (RMSE): {min_mae:.4f} / {min_rmse:.4f}\n')            
 
         if log_writer is not None:
             if args.nb_classes > 1:
@@ -539,6 +556,7 @@ def main(args):
                 # regression
                 log_writer.add_scalar('perf/test_mae', test_stats['mae'], epoch)
                 log_writer.add_scalar('perf/test_rmse', test_stats['rmse'], epoch)
+                log_writer.add_scalar('perf/test_pcc', test_stats['pcc'], epoch)
                 # log_writer.add_scalar('perf/test_my_mae', test_stats['my_mae'], epoch)
             log_writer.add_scalar('perf/test_loss', test_stats['loss'], epoch)
 
@@ -556,6 +574,7 @@ def main(args):
                     # regression
                     training_history['test_mae'] = test_stats['mae']
                     training_history['test_rmse'] = test_stats['rmse']
+                    training_history['test_pcc'] = test_stats['pcc']
                     # training_history['test_my_mae'] = test_stats['my_mae']
                 wandb.log(training_history)
 

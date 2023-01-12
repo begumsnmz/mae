@@ -56,6 +56,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
     # regression metrics
     metric_mae = torchmetrics.MeanAbsoluteError().to(device=device)
     metric_rmse = torchmetrics.MeanSquaredError(squared=False).to(device=device)
+    metric_pcc = torchmetrics.PearsonCorrCoef(num_outputs=1).to(device=device)
 
     for data_iter_step, (samples, targets) in enumerate(metric_logger.log_every(data_loader, print_freq, header)):
 
@@ -104,11 +105,13 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
             # regression
             mae = metric_mae(outputs, targets)
             rmse = metric_rmse(outputs, targets)
+            pcc = metric_pcc(outputs, targets)
 
             batch_size = samples.shape[0]
             # my_mae = ( ((outputs-targets)**2).sum() / batch_size )**0.5
             metric_logger.meters['mae'].update(mae.item(), n=batch_size)
             metric_logger.meters['rmse'].update(rmse.item(), n=batch_size)
+            metric_logger.meters['pcc'].update(pcc.item(), n=batch_size)
             # metric_logger.meters['my_mae'].update(my_mae.item(), n=batch_size)
 
         torch.cuda.synchronize()
@@ -155,6 +158,10 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
         metric_rmse.reset()
         training_stats["rmse"] = rmse.item()
 
+        pcc = metric_pcc.compute()
+        metric_pcc.reset()
+        training_stats["pcc"] = pcc.item()
+
     if log_writer is not None: #and (data_iter_step + 1) % accum_iter == 0:
         #""" We use epoch_1000x as the x-axis in tensorboard.
         #This calibrates different curves when batch size changes.
@@ -174,6 +181,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
             # regression
             log_writer.add_scalar('perf/train_mae', training_stats["mae"], epoch)
             log_writer.add_scalar('perf/train_rmse', training_stats["rmse"], epoch)
+            log_writer.add_scalar('perf/train_pcc', training_stats["pcc"], epoch)
             # log_writer.add_scalar('perf/train_my_mae', training_stats["my_mae"], epoch)
 
         if args.wandb == True:
@@ -189,6 +197,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
                 # regression
                 training_history['mae'] = training_stats["mae"]
                 training_history['rmse'] = training_stats["rmse"]
+                training_history['pcc'] = training_stats["pcc"]
                 # training_history['my_mae'] = training_stats["my_mae"]
             wandb.log(training_history)
 
@@ -220,6 +229,7 @@ def evaluate(data_loader, model, device, args=None):
     # regression metrics
     metric_mae = torchmetrics.MeanAbsoluteError().to(device=device)
     metric_rmse = torchmetrics.MeanSquaredError(squared=False).to(device=device)
+    metric_pcc = torchmetrics.PearsonCorrCoef(num_outputs=1).to(device=device)
     # #### THIS IS ONLY FOR SEED ####
     # metric_f1 = torchmetrics.F1Score(num_classes=3, threshold=0.5, average=None).to(device=device)
 
@@ -260,11 +270,13 @@ def evaluate(data_loader, model, device, args=None):
             # regression
             mae = metric_mae(output, target)
             rmse = metric_rmse(output, target)
+            pcc = metric_pcc(output, target)
 
             batch_size = images.shape[0]
             # my_mae = ( ((output-target)**2).sum() / batch_size )**0.5
             metric_logger.meters['mae'].update(mae.item(), n=batch_size)
             metric_logger.meters['rmse'].update(rmse.item(), n=batch_size)
+            metric_logger.meters['pcc'].update(pcc.item(), n=batch_size)
             # metric_logger.meters['my_mae'].update(my_mae.item(), n=batch_size)
 
     if args.wandb:
@@ -301,13 +313,17 @@ def evaluate(data_loader, model, device, args=None):
         metric_rmse.reset()
         test_stats["rmse"] = rmse.item()
 
+        pcc = metric_pcc.compute()
+        metric_pcc.reset()
+        test_stats["pcc"] = pcc.item()
+
     if args.nb_classes > 1:
         # classification
         print('* Acc@1 {top1.global_avg:.3f} Acc@5 {top5.global_avg:.3f} F1 {f1:.3f} AUROC {auroc:.3f} loss {losses:.3f}'
             .format(top1=metric_logger.acc1, top5=metric_logger.acc5, f1=test_stats["f1"], auroc=test_stats["auroc"], losses=test_stats["loss"]))
     else:
         # regression
-        print('* MAE {mae:.3f} RMSE {rmse:.3f} loss {losses:.3f}'
-            .format(mae=test_stats["mae"], rmse=test_stats["rmse"], losses=test_stats["loss"]))
+        print('* MAE {mae:.3f} RMSE {rmse:.3f} PCC {pcc:.2f} loss {losses:.3f}'
+            .format(mae=test_stats["mae"], rmse=test_stats["rmse"], pcc=test_stats["pcc"], losses=test_stats["loss"]))
 
     return test_stats

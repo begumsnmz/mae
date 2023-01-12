@@ -41,6 +41,9 @@ def param_groups_lrd(model, weight_decay=0.05, no_weight_decay_list=[], layer_de
 
         if group_name not in param_group_names:
             this_scale = layer_scales[layer_id]
+            # if layer_id == num_layers:
+            #     # increase the lr of the head by one magnitude  
+            #     this_scale = 10.0 * this_scale
 
             param_group_names[group_name] = {
                 "lr_scale": this_scale,
