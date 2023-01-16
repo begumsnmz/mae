@@ -17,6 +17,8 @@ from timm import data
 import torch
 import torchmetrics
 
+import sklearn.metrics
+
 import wandb
 
 from timm.data import Mixup
@@ -48,8 +50,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
     # classification metrics
     metric_acc = torchmetrics.Accuracy(num_classes=args.nb_classes, threshold=0.5, average='weighted').to(device=device)
     metric_f1 = torchmetrics.F1Score(num_classes=args.nb_classes, threshold=0.5, average=None).to(device=device)
-    pos_label = args.pos_label
-    metric_auroc = torchmetrics.AUROC(num_classes=args.nb_classes, pos_label=pos_label, average='macro').to(device=device)
+    metric_auroc = torchmetrics.AUROC(num_classes=args.nb_classes, pos_label=args.pos_label, average='macro').to(device=device)
     preds = []
     trgts = []
 
@@ -91,16 +92,18 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
             # classification
             acc1, _ = accuracy(outputs, targets, topk=(1, 5))
             acc = metric_acc(outputs.argmax(dim=-1), targets)
-            f1 = metric_f1(outputs.argmax(dim=-1), targets)[pos_label]
-            auroc = metric_auroc(torch.nn.functional.softmax(outputs, dim=-1)[:, pos_label], targets)
+            f1 = metric_f1(outputs.argmax(dim=-1), targets)[args.pos_label]
+            auroc = metric_auroc(torch.nn.functional.softmax(outputs, dim=-1)[:, args.pos_label], targets)
+            auprc = sklearn.metrics.average_precision_score(y_true=targets.detach().cpu(), y_score=torch.nn.functional.softmax(outputs.detach().cpu().type(torch.float32), dim=-1)[:, args.pos_label], average='micro', pos_label=args.pos_label)
             # store the results of each step in a list to calculate the auc globally of the entire epoch
-            [preds.append(elem.item()) for elem in torch.nn.functional.softmax(outputs, dim=-1)[:, pos_label]]
+            [preds.append(elem.item()) for elem in torch.nn.functional.softmax(outputs, dim=-1)[:, args.pos_label]]
             [trgts.append(elem.item()) for elem in targets]
 
             batch_size = samples.shape[0]
             metric_logger.meters['acc1'].update(acc1.item(), n=batch_size)
             metric_logger.meters['f1'].update(100*f1.item(), n=batch_size)
             metric_logger.meters['auroc'].update(100*auroc.item(), n=batch_size)
+            metric_logger.meters['auprc'].update(100*auprc.item(), n=batch_size)
         else:
             # regression
             mae = metric_mae(outputs, targets)
@@ -138,7 +141,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
         acc = 100*metric_acc.compute()
         metric_acc.reset()
 
-        f1 = 100*metric_f1.compute()[pos_label] # returns the f1 score
+        f1 = 100*metric_f1.compute()[args.pos_label] # returns the f1 score
         metric_f1.reset()
         training_stats["f1"] = f1.item()
 
@@ -148,6 +151,9 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
         auroc = 100*metric_auroc.compute() # returns the auroc for both classes combined (see average="macro")
         metric_auroc.reset()
         training_stats["auroc"] = auroc.item()
+
+        auprc = sklearn.metrics.average_precision_score(y_true=trgts, y_score=preds, average='micro', pos_label=args.pos_label)
+        training_stats["auprc"] = auprc.item()
     else:
         # regression
         mae = metric_mae.compute()
@@ -177,6 +183,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
             log_writer.add_scalar('perf/train_acc', acc, epoch)
             log_writer.add_scalar('perf/train_f1', training_stats["f1"], epoch)
             log_writer.add_scalar('perf/train_auroc', training_stats["auroc"], epoch)
+            log_writer.add_scalar('perf/train_auprc', training_stats["auprc"], epoch)
         else:
             # regression
             log_writer.add_scalar('perf/train_mae', training_stats["mae"], epoch)
@@ -193,6 +200,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
                 training_history['acc'] = training_stats["acc1"]
                 training_history['f1'] = training_stats["f1"]
                 training_history['auroc'] = training_stats["auroc"]
+                training_history['auprc'] = training_stats["auprc"]
             else:
                 # regression
                 training_history['mae'] = training_stats["mae"]
@@ -221,8 +229,7 @@ def evaluate(data_loader, model, device, args=None):
     model.eval()
     metric_acc = torchmetrics.Accuracy(num_classes=args.nb_classes, threshold=0.5, average='weighted').to(device=device)
     metric_f1 = torchmetrics.F1Score(num_classes=args.nb_classes, threshold=0.5, average=None).to(device=device)
-    pos_label = args.pos_label
-    metric_auroc = torchmetrics.AUROC(num_classes=args.nb_classes, pos_label=pos_label, average='macro').to(device=device)
+    metric_auroc = torchmetrics.AUROC(num_classes=args.nb_classes, pos_label=args.pos_label, average='macro').to(device=device)
     preds = []
     trgts = []
 
@@ -254,10 +261,11 @@ def evaluate(data_loader, model, device, args=None):
             # classification
             acc1, acc5 = accuracy(output, target, topk=(1, 5))
             acc = metric_acc(output.argmax(dim=-1), target)
-            f1 = metric_f1(output.argmax(dim=-1), target)[pos_label]
-            auroc = metric_auroc(torch.nn.functional.softmax(output, dim=-1)[:, pos_label], target)
+            f1 = metric_f1(output.argmax(dim=-1), target)[args.pos_label]
+            auroc = metric_auroc(torch.nn.functional.softmax(output, dim=-1)[:, args.pos_label], target)
+            auprc = sklearn.metrics.average_precision_score(y_true=target.detach().cpu(), y_score=torch.nn.functional.softmax(output.detach().cpu().type(torch.float32), dim=-1)[:, args.pos_label], average='micro', pos_label=args.pos_label)
             # store the results of each step in a list to calculate the auc globally of the entire epoch
-            [preds.append(elem.item()) for elem in torch.nn.functional.softmax(output, dim=-1)[:, pos_label]]
+            [preds.append(elem.item()) for elem in torch.nn.functional.softmax(output, dim=-1)[:, args.pos_label]]
             [trgts.append(elem.item()) for elem in target]
 
             batch_size = images.shape[0]
@@ -266,6 +274,7 @@ def evaluate(data_loader, model, device, args=None):
             metric_logger.meters['acc'].update(100*acc.item(), n=batch_size)
             metric_logger.meters['f1'].update(100*f1.item(), n=batch_size)
             metric_logger.meters['auroc'].update(100*auroc.item(), n=batch_size)
+            metric_logger.meters['auprc'].update(100*auprc.item(), n=batch_size)
         else:
             # regression
             mae = metric_mae(output, target)
@@ -293,7 +302,7 @@ def evaluate(data_loader, model, device, args=None):
         acc = 100*metric_acc.compute()
         metric_acc.reset()
 
-        f1 = 100*metric_f1.compute()[pos_label] # returns the f1 score
+        f1 = 100*metric_f1.compute()[args.pos_label] # returns the f1 score
         metric_f1.reset()
         test_stats["f1"] = f1.item()
 
@@ -303,6 +312,9 @@ def evaluate(data_loader, model, device, args=None):
         auroc = 100*metric_auroc.compute() # returns the auroc for both classes combined (see average="macro")
         metric_auroc.reset()
         test_stats["auroc"] = auroc.item()
+
+        auprc = sklearn.metrics.average_precision_score(y_true=trgts, y_score=preds, average='micro', pos_label=args.pos_label)
+        test_stats["auprc"] = auprc.item()
     else:
         # regression
         mae = metric_mae.compute()
@@ -319,8 +331,8 @@ def evaluate(data_loader, model, device, args=None):
 
     if args.nb_classes > 1:
         # classification
-        print('* Acc@1 {top1.global_avg:.3f} Acc@5 {top5.global_avg:.3f} F1 {f1:.3f} AUROC {auroc:.3f} loss {losses:.3f}'
-            .format(top1=metric_logger.acc1, top5=metric_logger.acc5, f1=test_stats["f1"], auroc=test_stats["auroc"], losses=test_stats["loss"]))
+        print('* Acc@1 {top1.global_avg:.3f} Acc@5 {top5.global_avg:.3f} F1 {f1:.3f} AUROC {auroc:.3f} AUPRC {auprc:.3f} loss {losses:.3f}'
+            .format(top1=metric_logger.acc1, top5=metric_logger.acc5, f1=test_stats["f1"], auroc=test_stats["auroc"], auprc=test_stats["auprc"], losses=test_stats["loss"]))
     else:
         # regression
         print('* MAE {mae:.3f} RMSE {rmse:.3f} PCC {pcc:.2f} loss {losses:.3f}'

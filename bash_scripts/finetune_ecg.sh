@@ -18,10 +18,10 @@ conda activate mae
 
 # Basic parameters seed = [0, 101, 202, 303, 404]
 seed="0"
-batch_size=(16)
+batch_size=(8)
 accum_iter=(1)
 
-epochs="400"
+epochs="50"
 warmup_epochs="5"
 
 # Callback parameters
@@ -43,11 +43,11 @@ jitter_sigma="0.2"
 rescaling_sigma="0.5"
 ft_surr_phase_noise="0.075"
 
-drop_path=(0.2)
+drop_path=(0.1)
 layer_decay="0.75"
 
 # Optimizer parameters
-blr=(1e-7)
+blr=(3e-6)
 min_lr="0.0"
 weight_decay=(0.1)
 
@@ -56,31 +56,31 @@ smoothing=(0.2)
 
 # Dataset parameters
 # Training balanced
-# data_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/ecgs_train_CAD_all_balanced_noBase_gn.pt"
-# labels_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/labels_train_CAD_all_balanced.pt"
-# nb_classes="2"
+data_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/ecgs_train_CAD_all_balanced_noBase_gn.pt"
+labels_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/labels_train_CAD_all_balanced.pt"
+nb_classes="2"
 # data_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/ecgs_train_BMI_balanced_noBase_gn.pt"
 # labels_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/labels_train_BMI_balanced.pt"
 # nb_classes="2"
 # val_data_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/ecgs_train_ecg_imaging_noBase_gn.pt"
 # val_labels_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/labels_train_infarct_future.pt"
 # num_classes="2"
-data_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/ecgs_train_ecg_imaging_noBase_gn.pt"
-labels_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/labelsOneHot/labels_train_LVM_regression_div300.pt"
-nb_classes="1"
+# data_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/ecgs_train_ecg_imaging_noBase_gn.pt"
+# labels_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/labelsOneHot/labels_train_LVM_regression_div300.pt"
+# nb_classes="1"
 
 # Validation unbalanced
-# val_data_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/ecgs_val_ecg_imaging_noBase_gn.pt"
-# val_labels_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/labels_val_CAD_all.pt"
-# pos_label="1"
+val_data_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/ecgs_val_ecg_imaging_noBase_gn.pt"
+val_labels_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/labels_val_CAD_all.pt"
+pos_label="1"
 # val_data_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/ecgs_val_BMI_noBase_gn.pt"
 # val_labels_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/labels_val_BMI.pt"
 # pos_label="0"
 # val_data_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/ecgs_val_ecg_imaging_noBase_gn.pt"
 # val_labels_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/labels_val_infarct_future.pt"
 # pos_label="1"
-val_data_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/ecgs_val_ecg_imaging_noBase_gn.pt"
-val_labels_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/labelsOneHot/labels_val_LVM_regression_div300.pt"
+# val_data_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/ecgs_val_ecg_imaging_noBase_gn.pt"
+# val_labels_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/labelsOneHot/labels_val_LVM_regression_div300.pt"
 
 global_pool=(True)
 attention_pool=(True)
@@ -89,7 +89,7 @@ num_workers="24"
 # Log specifications
 save_output="False"
 wandb="True"
-wandb_project="MAE_ECG_Fin_Tiny_LVM"
+wandb_project="MAE_ECG_Fin_Tiny_CAD"
 
 # Pretraining specifications
 pre_batch_size=(128)

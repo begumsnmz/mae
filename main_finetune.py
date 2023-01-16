@@ -467,6 +467,7 @@ def main(args):
                     log_writer.add_scalar('perf/test_acc', test_stats['acc'], epoch)
                     log_writer.add_scalar('perf/test_f1', test_stats['f1'], epoch)
                     log_writer.add_scalar('perf/test_auroc', test_stats['auroc'], epoch)
+                    log_writer.add_scalar('perf/test_auprc', test_stats['auprc'], epoch)
                 else:
                     # regression
                     log_writer.add_scalar('perf/test_mae', test_stats['mae'], epoch)
@@ -485,6 +486,7 @@ def main(args):
                     training_history['test_acc'] = test_stats['acc']
                     training_history['test_f1'] = test_stats['f1']
                     training_history['test_auroc'] = test_stats['auroc']
+                    training_history['test_auprc'] = test_stats['auprc']
                 else:
                     # regression
                     training_history['test_mae'] = test_stats['mae']
@@ -552,6 +554,7 @@ def main(args):
                 log_writer.add_scalar('perf/test_acc', test_stats['acc'], epoch)
                 log_writer.add_scalar('perf/test_f1', test_stats['f1'], epoch)
                 log_writer.add_scalar('perf/test_auroc', test_stats['auroc'], epoch)
+                log_writer.add_scalar('perf/test_auprc', test_stats['auprc'], epoch)
             else:
                 # regression
                 log_writer.add_scalar('perf/test_mae', test_stats['mae'], epoch)
@@ -570,6 +573,7 @@ def main(args):
                     training_history['test_acc'] = test_stats['acc']
                     training_history['test_f1'] = test_stats['f1']
                     training_history['test_auroc'] = test_stats['auroc']
+                    training_history['test_auprc'] = test_stats['auprc']
                 else:
                     # regression
                     training_history['test_mae'] = test_stats['mae']
