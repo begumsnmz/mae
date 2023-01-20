@@ -154,14 +154,23 @@ def get_args_parser():
                         help='Use class token instead of global pool for classification')
 
     # Dataset parameters
-    parser.add_argument('--data_path', default='_.pt', type=str,
-                        help='dataset path')
-    parser.add_argument('--labels_path', default='_.pt', type=str,
-                        help='labels path')
-    parser.add_argument('--val_data_path', default='_.pt', type=str,
-                        help='validation dataset path')
-    parser.add_argument('--val_labels_path', default='_.pt', type=str,
-                        help='validation labels path')
+    parser.add_argument('--downstream_task', default='classification', type=str,
+                        help='downstream task (default: classification)')
+
+    parser.add_argument('--data_path', default='', type=str,
+                        help='dataset path (default: None)')
+    parser.add_argument('--labels_path', default='', type=str,
+                        help='labels path (default: None)')
+    parser.add_argument('--labels_mask_path', default='', type=str,
+                        help='labels path (default: None)')
+
+    parser.add_argument('--val_data_path', default='', type=str,
+                        help='validation dataset path (default: None)')
+    parser.add_argument('--val_labels_path', default='', type=str,
+                        help='validation labels path (default: None)')
+    parser.add_argument('--val_labels_mask_path', default='', type=str,
+                        help='validation labels path (default: None)')
+
     parser.add_argument('--nb_classes', default=2, type=int,
                         help='number of the classification types')
     parser.add_argument('--pos_label', default=0, type=int,
@@ -247,32 +256,9 @@ def main(args):
     np.random.seed(seed)
 
     cudnn.benchmark = True
-
-    # dataset_d_train = EEGDatasetFast(augment=True, args=args)
-    # dataset_train = Subset(dataset_d_train, list(range(int(0*1), int(132*1))))
-
-    # dataset_d_validation = EEGDatasetFast(transform=True, augment=False, args=args)
-    # if args.eval == False:
-    #     dataset_val = Subset(dataset_d_validation, list(range(int(132*1), int(160*1))))
-    # else:
-    #     dataset_val = Subset(dataset_d_validation, list(range(int(160*1), int(189*1))))
-
-    # args.data_path = "/home/guests/oezguen_turgut/PyTorchEEG/data/preprocessed/data_HEITMANN_701515_nf_cw_id_fs200.pt"
-    # args.labels_path = "/home/guests/oezguen_turgut/PyTorchEEG/data/preprocessed/labels_HEITMANN_701515.pt"
-
-    # dataset_h_train = EEGDatasetFast(augment=True, args=args)
-    # dataset_h_train_sub = Subset(dataset_h_train, list(range(int(0*1), int(27*1))))
-    # dataset_train = ConcatDataset([dataset_train, dataset_h_train_sub])
-
-    # dataset_h_validation = EEGDatasetFast(transform=True, augment=False, args=args)
-    # if args.eval == False:
-    #     dataset_h_validation_sub = Subset(dataset_h_validation, list(range(int(27*1), int(34*1))))
-    # else:
-    #     dataset_h_validation_sub = Subset(dataset_h_validation, list(range(int(34*1), int(41*1))))
-    # dataset_val = ConcatDataset([dataset_val, dataset_h_validation_sub])
     
-    dataset_train = SignalDataset(data_path=args.data_path, labels_path=args.labels_path, augment=True, args=args)
-    dataset_val = SignalDataset(data_path=args.val_data_path, labels_path=args.val_labels_path, transform=True, augment=False, args=args)
+    dataset_train = SignalDataset(data_path=args.data_path, labels_path=args.labels_path, labels_mask_path=args.labels_mask_path, augment=True, args=args)
+    dataset_val = SignalDataset(data_path=args.val_data_path, labels_path=args.val_labels_path, labels_mask_path=args.val_labels_mask_path, transform=True, augment=False, args=args)
 
     # train balanced
     class_weights = 2.0 / (2.0 * torch.Tensor([1.0, 1.0])) # total_nb_samples / (nb_classes * samples_per_class)
@@ -350,6 +336,7 @@ def main(args):
         num_classes=args.nb_classes,
         drop_path_rate=args.drop_path,
         global_pool=args.global_pool,
+        downstream_task=args.downstream_task,
     )
     model.blocks[-1].attn.forward = attention_forward_wrapper(model.blocks[-1].attn) # required to read out the attention map of the last layer
 
@@ -372,7 +359,8 @@ def main(args):
         print(msg)
 
         if args.global_pool == "attention_pool":
-            assert set(msg.missing_keys) == {'head.weight', 'head.bias', 'fc_norm.weight', 'fc_norm.bias', 'attention_pool.out_proj.weight', 'attention_pool.in_proj_weight', 'attention_pool.out_proj.bias', 'attention_pool.in_proj_bias'}
+            # assert set(msg.missing_keys) == {'head.weight', 'head.bias', 'fc_norm.weight', 'fc_norm.bias', 'attention_pool.out_proj.weight', 'attention_pool.in_proj_weight', 'attention_pool.out_proj.bias', 'attention_pool.in_proj_bias'}
+            pass
         elif args.global_pool:
             assert set(msg.missing_keys) == {'head.weight', 'head.bias', 'fc_norm.weight', 'fc_norm.bias'}
         else:
@@ -420,7 +408,7 @@ def main(args):
     loss_scaler = NativeScaler()
 
     class_weights = class_weights.to(device=device)
-    if args.nb_classes == 1:
+    if args.downstream_task == 'regression':
         # regression, else classification
         criterion = torch.nn.MSELoss()
     elif mixup_fn is not None:
@@ -449,51 +437,15 @@ def main(args):
 
             misc.load_model(args=args, model_without_ddp=model_without_ddp, optimizer=optimizer, loss_scaler=loss_scaler)
 
-            test_stats = evaluate(data_loader_val, model, device, args=args)
+            test_stats = evaluate(data_loader_val, model, device, epoch, log_writer=log_writer, args=args)
 
-            if args.nb_classes > 1:
+            if args.downstream_task == 'classification':
                 # classification
                 print(f"Accuracy / F1 / AUROC of the network on the {len(dataset_val)} test images: {test_stats['acc1']:.1f}% / {test_stats['f1']:.1f}% / {test_stats['auroc']:.1f}%")
-            else:
+            elif args.downstream_task == 'regression':
                 # regression
-                print(f"Mean Absolute Error (MAE) / Root Mean Squared Error (RMSE) / Pearson Correlation Coefficient (PCC) of the network on the {len(dataset_val)} test images:\
-                     {test_stats['mae']:.4f} / {test_stats['rmse']:.4f} / {test_stats['pcc']:.2f}")
-
-            if log_writer is not None:
-                if args.nb_classes > 1:
-                    # classification
-                    log_writer.add_scalar('perf/test_acc1', test_stats['acc1'], epoch)
-                    #log_writer.add_scalar('perf/test_acc5', test_stats['acc5'], epoch)
-                    log_writer.add_scalar('perf/test_acc', test_stats['acc'], epoch)
-                    log_writer.add_scalar('perf/test_f1', test_stats['f1'], epoch)
-                    log_writer.add_scalar('perf/test_auroc', test_stats['auroc'], epoch)
-                    log_writer.add_scalar('perf/test_auprc', test_stats['auprc'], epoch)
-                else:
-                    # regression
-                    log_writer.add_scalar('perf/test_mae', test_stats['mae'], epoch)
-                    log_writer.add_scalar('perf/test_rmse', test_stats['rmse'], epoch)
-                    log_writer.add_scalar('perf/test_pcc', test_stats['pcc'], epoch)
-                    # log_writer.add_scalar('perf/test_my_mae', test_stats['my_mae'], epoch)
-                log_writer.add_scalar('perf/test_loss', test_stats['loss'], epoch)
-
-            if args.wandb == True:
-                training_history = {'epoch' : epoch,
-                                    'test_loss' : test_stats['loss']}
-                if args.nb_classes > 1:
-                    # classification
-                    training_history['test_acc1'] = test_stats['acc1']
-                    # training_history['test_acc5'] = test_stats['acc5']
-                    training_history['test_acc'] = test_stats['acc']
-                    training_history['test_f1'] = test_stats['f1']
-                    training_history['test_auroc'] = test_stats['auroc']
-                    training_history['test_auprc'] = test_stats['auprc']
-                else:
-                    # regression
-                    training_history['test_mae'] = test_stats['mae']
-                    training_history['test_rmse'] = test_stats['rmse']
-                    training_history['test_pcc'] = test_stats['pcc']
-                    # training_history['test_my_mae'] = test_stats['my_mae']
-                wandb.log(training_history)
+                print(f"Root Mean Squared Error (RMSE) / Pearson Correlation Coefficient (PCC) of the network on the {len(dataset_val)} test images:\
+                     {test_stats['rmse']:.4f} / {test_stats['pcc']:.2f}")
         
         exit(0)
 
@@ -503,7 +455,7 @@ def main(args):
     
     start_time = time.time()
     max_accuracy, max_f1, max_auroc = 0.0, 0.0, 0.0
-    min_mae, min_rmse = np.inf, np.inf
+    min_rmse = np.inf
     for epoch in range(args.start_epoch, args.epochs):
         # if epoch == 2:
         #     for _, p in model.named_parameters():
@@ -525,62 +477,26 @@ def main(args):
                 args=args, model=model, model_without_ddp=model_without_ddp, optimizer=optimizer,
                 loss_scaler=loss_scaler, epoch=epoch)
 
-        test_stats = evaluate(data_loader_val, model, device, args=args)
-        if args.nb_classes != 1 and early_stop.evaluate_metric(val_metric=test_stats["auroc"]):
+        test_stats = evaluate(data_loader_val, model, device, epoch, log_writer=log_writer, args=args)
+        if args.downstream_task == 'classification' and early_stop.evaluate_metric(val_metric=test_stats["auroc"]):
             break
-        elif early_stop.evaluate_loss(val_loss=test_stats["loss"]):
+        # elif args.downstream_task == 'regression' and early_stop.evaluate_loss(val_loss=test_stats["loss"]):
+        elif args.downstream_task == 'regression' and early_stop.evaluate_metric(val_metric=test_stats["pcc"]):
             break
 
-        if args.nb_classes > 1:
+        if args.downstream_task == 'classification':
             # classification
             print(f"Accuracy / F1 / AUROC of the network on the {len(dataset_val)} test images: {test_stats['acc1']:.1f}% / {test_stats['f1']:.1f}% / {test_stats['auroc']:.1f}%")
             max_accuracy = max(max_accuracy, test_stats["acc1"])
             max_f1 = max(max_f1, test_stats['f1'])
             max_auroc = max(max_auroc, test_stats['auroc'])
             print(f'Max Accuracy / F1 / AUROC: {max_accuracy:.2f}% / {max_f1:.2f}% / {max_auroc:.2f}%\n')
-        else:
+        elif args.downstream_task == 'regression':
             # regression
-            print(f"Mean Absolute Error (MAE) / Root Mean Squared Error (RMSE) / Pearson Correlation Coefficient (PCC) of the network on the {len(dataset_val)} test images:\
-                 {test_stats['mae']:.4f} / {test_stats['rmse']:.4f} / {test_stats['pcc']:.2f}")
-            min_mae = max(min_mae, test_stats['mae'])
-            min_rmse = max(min_rmse, test_stats['rmse'])
-            print(f'Min Mean Absolute Error (MAE) / Root Mean Squared Error (RMSE): {min_mae:.4f} / {min_rmse:.4f}\n')            
-
-        if log_writer is not None:
-            if args.nb_classes > 1:
-                # classification
-                log_writer.add_scalar('perf/test_acc1', test_stats['acc1'], epoch)
-                #log_writer.add_scalar('perf/test_acc5', test_stats['acc5'], epoch)
-                log_writer.add_scalar('perf/test_acc', test_stats['acc'], epoch)
-                log_writer.add_scalar('perf/test_f1', test_stats['f1'], epoch)
-                log_writer.add_scalar('perf/test_auroc', test_stats['auroc'], epoch)
-                log_writer.add_scalar('perf/test_auprc', test_stats['auprc'], epoch)
-            else:
-                # regression
-                log_writer.add_scalar('perf/test_mae', test_stats['mae'], epoch)
-                log_writer.add_scalar('perf/test_rmse', test_stats['rmse'], epoch)
-                log_writer.add_scalar('perf/test_pcc', test_stats['pcc'], epoch)
-                # log_writer.add_scalar('perf/test_my_mae', test_stats['my_mae'], epoch)
-            log_writer.add_scalar('perf/test_loss', test_stats['loss'], epoch)
-
-            if args.wandb == True:
-                training_history = {'epoch' : epoch,
-                                    'test_loss' : test_stats['loss']}
-                if args.nb_classes > 1:
-                    # classification
-                    training_history['test_acc1'] = test_stats['acc1']
-                    # training_history['test_acc5'] = test_stats['acc5']
-                    training_history['test_acc'] = test_stats['acc']
-                    training_history['test_f1'] = test_stats['f1']
-                    training_history['test_auroc'] = test_stats['auroc']
-                    training_history['test_auprc'] = test_stats['auprc']
-                else:
-                    # regression
-                    training_history['test_mae'] = test_stats['mae']
-                    training_history['test_rmse'] = test_stats['rmse']
-                    training_history['test_pcc'] = test_stats['pcc']
-                    # training_history['test_my_mae'] = test_stats['my_mae']
-                wandb.log(training_history)
+            print(f"Root Mean Squared Error (RMSE) / Pearson Correlation Coefficient (PCC) of the network on the {len(dataset_val)} test images:\
+                 {test_stats['rmse']:.4f} / {test_stats['pcc']:.2f}")
+            min_rmse = min(min_rmse, test_stats['rmse'])
+            print(f'Min Root Mean Squared Error (RMSE): {min_rmse:.4f}\n')
 
         log_stats = {**{f'train_{k}': v for k, v in train_stats.items()},
                         **{f'test_{k}': v for k, v in test_stats.items()},

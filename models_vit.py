@@ -20,11 +20,13 @@ import timm.models.vision_transformer
 class VisionTransformer(timm.models.vision_transformer.VisionTransformer):
     """ Vision Transformer with support for global average pooling
     """
-    def __init__(self, global_pool=False, **kwargs):
+    def __init__(self, global_pool=False, downstream_task='classification', **kwargs):
         super(VisionTransformer, self).__init__(**kwargs)
 
+        self.downstream_task = downstream_task
+
         self.global_pool = global_pool
-        if self.global_pool == "attention_pool":
+        if self.global_pool == 'attention_pool':
             self.attention_pool = nn.MultiheadAttention(embed_dim=kwargs['embed_dim'], num_heads=kwargs['num_heads'], batch_first=True)
         if self.global_pool:
             norm_layer = kwargs['norm_layer']
@@ -45,7 +47,7 @@ class VisionTransformer(timm.models.vision_transformer.VisionTransformer):
         for blk in self.blocks:
             x = blk(x)
 
-        if self.global_pool == "attention_pool":
+        if self.global_pool == 'attention_pool':
             q = x[:, 1:, :].mean(dim=1, keepdim=True)
             k = x[:, 1:, :]
             v = x[:, 1:, :]
@@ -64,12 +66,11 @@ class VisionTransformer(timm.models.vision_transformer.VisionTransformer):
         if self.global_pool:
             x = x[:, self.num_prefix_tokens:].mean(dim=1) if self.global_pool == 'avg' else x[:, :]
         x = self.fc_norm(x)
-        if self.num_classes > 1:
-            # classification
+        
+        if self.downstream_task == 'classification':
             return x if pre_logits else self.head(x)
-        else:
-            # regression
-            return x if pre_logits else self.head(x).sigmoid()
+        elif self.downstream_task == 'regression':
+            return x if pre_logits else self.head(x) #.sigmoid()
 
 
 def vit_pluto_patchX(**kwargs):

@@ -16,6 +16,7 @@ from timm import data
 
 import torch
 import torchmetrics
+from torchmetrics import MultioutputWrapper
 
 import sklearn.metrics
 
@@ -27,6 +28,8 @@ from timm.utils import accuracy
 import util.misc as misc
 import util.lr_sched as lr_sched
 import util.plot as plot
+from util.metrics import MeanSquaredError
+
 
 def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
                     data_loader: Iterable, optimizer: torch.optim.Optimizer,
@@ -55,11 +58,10 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
     trgts = []
 
     # regression metrics
-    metric_mae = torchmetrics.MeanAbsoluteError().to(device=device)
-    metric_rmse = torchmetrics.MeanSquaredError(squared=False).to(device=device)
-    metric_pcc = torchmetrics.PearsonCorrCoef(num_outputs=1).to(device=device)
+    metric_rmse = MeanSquaredError(squared=False) #.to(device=device)
+    metric_pcc = MultioutputWrapper(torchmetrics.PearsonCorrCoef(num_outputs=1), num_outputs=args.nb_classes).to(device=args.device)
 
-    for data_iter_step, (samples, targets) in enumerate(metric_logger.log_every(data_loader, print_freq, header)):
+    for data_iter_step, (samples, targets, targets_mask) in enumerate(metric_logger.log_every(data_loader, print_freq, header)):
 
         # we use a per iteration (instead of per epoch) lr scheduler
         if data_iter_step % accum_iter == 0:
@@ -67,12 +69,17 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
 
         samples = samples.to(device, non_blocking=True)
         targets = targets.to(device, non_blocking=True)
+        targets_mask = targets_mask.to(device, non_blocking=True)
+        targets = targets * targets_mask
+
+        if args.downstream_task == 'classification':
+            targets_mask = targets_mask.unsqueeze(dim=-1).repeat(1, args.nb_classes)
 
         if mixup_fn is not None:
             samples, targets = mixup_fn(samples, targets)
 
         with torch.cuda.amp.autocast():
-            outputs = model(samples)
+            outputs = model(samples)*targets_mask
             loss = criterion(outputs, targets)
 
         loss_value = loss.item()
@@ -88,8 +95,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
         if (data_iter_step + 1) % accum_iter == 0:
             optimizer.zero_grad()
 
-        if args.nb_classes > 1:
-            # classification
+        if args.downstream_task == 'classification':
             acc1, _ = accuracy(outputs, targets, topk=(1, 5))
             acc = metric_acc(outputs.argmax(dim=-1), targets)
             f1 = metric_f1(outputs.argmax(dim=-1), targets)[args.pos_label]
@@ -104,18 +110,13 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
             metric_logger.meters['f1'].update(100*f1.item(), n=batch_size)
             metric_logger.meters['auroc'].update(100*auroc.item(), n=batch_size)
             metric_logger.meters['auprc'].update(100*auprc.item(), n=batch_size)
-        else:
-            # regression
-            mae = metric_mae(outputs, targets)
+        elif args.downstream_task == 'regression':
             rmse = metric_rmse(outputs, targets)
             pcc = metric_pcc(outputs, targets)
 
             batch_size = samples.shape[0]
-            # my_mae = ( ((outputs-targets)**2).sum() / batch_size )**0.5
-            metric_logger.meters['mae'].update(mae.item(), n=batch_size)
-            metric_logger.meters['rmse'].update(rmse.item(), n=batch_size)
-            metric_logger.meters['pcc'].update(pcc.item(), n=batch_size)
-            # metric_logger.meters['my_mae'].update(my_mae.item(), n=batch_size)
+            metric_logger.meters['rmse'].update(torch.tensor(rmse).mean().item(), n=batch_size)
+            metric_logger.meters['pcc'].update(torch.tensor(pcc).mean().item(), n=batch_size)
 
         torch.cuda.synchronize()
 
@@ -136,8 +137,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
 
     training_stats = {k: meter.global_avg for k, meter in metric_logger.meters.items()}
 
-    if args.nb_classes > 1:
-        # classification
+    if args.downstream_task == 'classification':
         acc = 100*metric_acc.compute()
         metric_acc.reset()
 
@@ -154,19 +154,14 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
 
         auprc = sklearn.metrics.average_precision_score(y_true=trgts, y_score=preds, average='micro', pos_label=args.pos_label)
         training_stats["auprc"] = auprc.item()
-    else:
-        # regression
-        mae = metric_mae.compute()
-        metric_mae.reset()
-        training_stats["mae"] = mae.item()
-
+    elif args.downstream_task == 'regression':
         rmse = metric_rmse.compute()
         metric_rmse.reset()
-        training_stats["rmse"] = rmse.item()
+        training_stats["rmse"] = torch.tensor(rmse).mean().item()
 
         pcc = metric_pcc.compute()
         metric_pcc.reset()
-        training_stats["pcc"] = pcc.item()
+        training_stats["pcc"] = torch.tensor(pcc).mean().item()
 
     if log_writer is not None: #and (data_iter_step + 1) % accum_iter == 0:
         #""" We use epoch_1000x as the x-axis in tensorboard.
@@ -176,53 +171,52 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
         log_writer.add_scalar('loss', training_stats["loss"], epoch)
         log_writer.add_scalar('lr', training_stats["lr"], epoch)
 
-        if args.nb_classes > 1:
-            # classification
+        if args.downstream_task == 'classification':
             log_writer.add_scalar('perf/train_acc1', training_stats["acc1"], epoch)
             #log_writer.add_scalar('perf/train_acc5', acc5, epoch)
             log_writer.add_scalar('perf/train_acc', acc, epoch)
             log_writer.add_scalar('perf/train_f1', training_stats["f1"], epoch)
             log_writer.add_scalar('perf/train_auroc', training_stats["auroc"], epoch)
             log_writer.add_scalar('perf/train_auprc', training_stats["auprc"], epoch)
-        else:
-            # regression
-            log_writer.add_scalar('perf/train_mae', training_stats["mae"], epoch)
+        elif args.downstream_task == 'regression':
             log_writer.add_scalar('perf/train_rmse', training_stats["rmse"], epoch)
             log_writer.add_scalar('perf/train_pcc', training_stats["pcc"], epoch)
-            # log_writer.add_scalar('perf/train_my_mae', training_stats["my_mae"], epoch)
 
         if args.wandb == True:
             training_history['epoch'] = epoch
             training_history['loss'] = training_stats["loss"]
             training_history['lr'] = training_stats["lr"]
-            if args.nb_classes > 1:
-                # classification
+            if args.downstream_task == 'classification':
                 training_history['acc'] = training_stats["acc1"]
                 training_history['f1'] = training_stats["f1"]
                 training_history['auroc'] = training_stats["auroc"]
                 training_history['auprc'] = training_stats["auprc"]
-            else:
-                # regression
-                training_history['mae'] = training_stats["mae"]
+            elif args.downstream_task == 'regression':
                 training_history['rmse'] = training_stats["rmse"]
                 training_history['pcc'] = training_stats["pcc"]
-                # training_history['my_mae'] = training_stats["my_mae"]
+
+                for i in range(targets.shape[-1]):
+                    training_history[f'Train/RMSE/{i}'] = torch.tensor(rmse[i]).item()
+                    training_history[f'Train/PCC/{i}'] = pcc[i].item()
+
             wandb.log(training_history)
 
     return training_stats
 
 
 @torch.no_grad()
-def evaluate(data_loader, model, device, args=None):
-    if args.nb_classes == 1:
-        # regression
-        criterion = torch.nn.MSELoss()
-    else:
-        # classification
+def evaluate(data_loader, model, device, epoch, log_writer=None, args=None):
+    if args.downstream_task == 'classification':
         criterion = torch.nn.CrossEntropyLoss()
+    elif args.downstream_task == 'regression':
+        criterion = torch.nn.MSELoss()
 
     metric_logger = misc.MetricLogger(delimiter="  ")
     header = 'Test:'
+
+    if log_writer is not None:
+        print('log_dir: {}'.format(log_writer.log_dir))
+        test_history = {}  
 
     # switch to evaluation mode
     # classificaiton metrics
@@ -234,21 +228,26 @@ def evaluate(data_loader, model, device, args=None):
     trgts = []
 
     # regression metrics
-    metric_mae = torchmetrics.MeanAbsoluteError().to(device=device)
-    metric_rmse = torchmetrics.MeanSquaredError(squared=False).to(device=device)
-    metric_pcc = torchmetrics.PearsonCorrCoef(num_outputs=1).to(device=device)
+    metric_rmse = MeanSquaredError(squared=False) #.to(device=device)
+    metric_pcc = MultioutputWrapper(torchmetrics.PearsonCorrCoef(num_outputs=1), num_outputs=args.nb_classes).to(device=args.device)
     # #### THIS IS ONLY FOR SEED ####
     # metric_f1 = torchmetrics.F1Score(num_classes=3, threshold=0.5, average=None).to(device=device)
 
     for batch in metric_logger.log_every(data_loader, 10, header):
         images = batch[0]
-        target = batch[-1]
+        target = batch[-2]
+        target_mask = batch[-1]
         images = images.to(device, non_blocking=True)
         target = target.to(device, non_blocking=True)
+        target_mask = target_mask.to(device, non_blocking=True)
+        target = target * target_mask
+
+        if args.downstream_task == 'classification':
+            target_mask = target_mask.unsqueeze(dim=-1).repeat(1, args.nb_classes)
 
         # compute output
         with torch.cuda.amp.autocast():
-            output = model(images)
+            output = model(images)*target_mask
             loss = criterion(output, target)
 
         attention_map = model.blocks[-1].attn.attn_map
@@ -257,8 +256,7 @@ def evaluate(data_loader, model, device, args=None):
         # print("Output: ", [i.item() for i in torch.argmax(output, dim=1)])
 
         metric_logger.update(loss=loss.item())
-        if args.nb_classes > 1:
-            # classification
+        if args.downstream_task == 'classification':
             acc1, acc5 = accuracy(output, target, topk=(1, 5))
             acc = metric_acc(output.argmax(dim=-1), target)
             f1 = metric_f1(output.argmax(dim=-1), target)[args.pos_label]
@@ -275,18 +273,13 @@ def evaluate(data_loader, model, device, args=None):
             metric_logger.meters['f1'].update(100*f1.item(), n=batch_size)
             metric_logger.meters['auroc'].update(100*auroc.item(), n=batch_size)
             metric_logger.meters['auprc'].update(100*auprc.item(), n=batch_size)
-        else:
-            # regression
-            mae = metric_mae(output, target)
+        if args.downstream_task == 'regression':
             rmse = metric_rmse(output, target)
             pcc = metric_pcc(output, target)
 
             batch_size = images.shape[0]
-            # my_mae = ( ((output-target)**2).sum() / batch_size )**0.5
-            metric_logger.meters['mae'].update(mae.item(), n=batch_size)
-            metric_logger.meters['rmse'].update(rmse.item(), n=batch_size)
-            metric_logger.meters['pcc'].update(pcc.item(), n=batch_size)
-            # metric_logger.meters['my_mae'].update(my_mae.item(), n=batch_size)
+            metric_logger.meters['rmse'].update(torch.tensor(rmse).mean().item(), n=batch_size)
+            metric_logger.meters['pcc'].update(torch.tensor(pcc).mean().item(), n=batch_size)
 
     if args.wandb:
         idx = 1 if args.batch_size > 1 else 0
@@ -297,8 +290,7 @@ def evaluate(data_loader, model, device, args=None):
 
     test_stats = {k: meter.global_avg for k, meter in metric_logger.meters.items()}
 
-    if args.nb_classes > 1:
-        # classification
+    if args.downstream_task == 'classification':
         acc = 100*metric_acc.compute()
         metric_acc.reset()
 
@@ -315,27 +307,53 @@ def evaluate(data_loader, model, device, args=None):
 
         auprc = sklearn.metrics.average_precision_score(y_true=trgts, y_score=preds, average='micro', pos_label=args.pos_label)
         test_stats["auprc"] = auprc.item()
-    else:
-        # regression
-        mae = metric_mae.compute()
-        metric_mae.reset()
-        test_stats["mae"] = mae.item()
-
+    elif args.downstream_task == 'regression':
         rmse = metric_rmse.compute()
         metric_rmse.reset()
-        test_stats["rmse"] = rmse.item()
+        test_stats["rmse"] = torch.tensor(rmse).mean().item()
 
         pcc = metric_pcc.compute()
         metric_pcc.reset()
-        test_stats["pcc"] = pcc.item()
+        test_stats["pcc"] = torch.tensor(pcc).mean().item()
 
-    if args.nb_classes > 1:
-        # classification
+    if args.downstream_task == 'classification':
         print('* Acc@1 {top1.global_avg:.3f} Acc@5 {top5.global_avg:.3f} F1 {f1:.3f} AUROC {auroc:.3f} AUPRC {auprc:.3f} loss {losses:.3f}'
             .format(top1=metric_logger.acc1, top5=metric_logger.acc5, f1=test_stats["f1"], auroc=test_stats["auroc"], auprc=test_stats["auprc"], losses=test_stats["loss"]))
-    else:
-        # regression
-        print('* MAE {mae:.3f} RMSE {rmse:.3f} PCC {pcc:.2f} loss {losses:.3f}'
-            .format(mae=test_stats["mae"], rmse=test_stats["rmse"], pcc=test_stats["pcc"], losses=test_stats["loss"]))
+    elif args.downstream_task == 'regression':
+        print('* RMSE {rmse:.3f} PCC {pcc:.2f} loss {losses:.3f}'
+            .format(rmse=test_stats["rmse"], pcc=test_stats["pcc"], losses=test_stats["loss"]))
 
+    if log_writer is not None:
+        if args.downstream_task == 'classification':
+            log_writer.add_scalar('perf/test_acc1', test_stats['acc1'], epoch)
+            #log_writer.add_scalar('perf/test_acc5', test_stats['acc5'], epoch)
+            log_writer.add_scalar('perf/test_acc', test_stats['acc'], epoch)
+            log_writer.add_scalar('perf/test_f1', test_stats['f1'], epoch)
+            log_writer.add_scalar('perf/test_auroc', test_stats['auroc'], epoch)
+            log_writer.add_scalar('perf/test_auprc', test_stats['auprc'], epoch)
+        elif args.downstream_task == 'regression':
+            log_writer.add_scalar('perf/test_rmse', test_stats['rmse'], epoch)
+            log_writer.add_scalar('perf/test_pcc', test_stats['pcc'], epoch)
+        log_writer.add_scalar('perf/test_loss', test_stats['loss'], epoch)
+
+        if args.wandb == True:
+            test_history = {'epoch' : epoch,
+                                'test_loss' : test_stats['loss']}
+            if args.downstream_task == 'classification':
+                test_history['test_acc1'] = test_stats['acc1']
+                # test_history['test_acc5'] = test_stats['acc5']
+                test_history['test_acc'] = test_stats['acc']
+                test_history['test_f1'] = test_stats['f1']
+                test_history['test_auroc'] = test_stats['auroc']
+                test_history['test_auprc'] = test_stats['auprc']
+            elif args.downstream_task == 'regression':
+                test_history['test_rmse'] = test_stats['rmse']
+                test_history['test_pcc'] = test_stats['pcc']
+
+                for i in range(target.shape[-1]):
+                    test_history[f'Test/RMSE/{i}'] = torch.tensor(rmse[i]).item()
+                    test_history[f'Test/PCC/{i}'] = pcc[i].item()
+
+            wandb.log(test_history)
+    
     return test_stats
