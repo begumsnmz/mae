@@ -106,13 +106,8 @@ def get_args_parser():
     # Dataset parameters
     parser.add_argument('--data_path', default='_.pt', type=str,
                         help='dataset path')
-    parser.add_argument('--labels_path', default='_.pt', type=str,
-                        help='labels path')
-
-    parser.add_argument('--transfer_data_path', default='', type=str,
-                        help='transfer learning dataset path (leave empty for no transfer learning)')
-    parser.add_argument('--transfer_labels_path', default='', type=str,
-                        help='transfer learning labels path (leave empty for no transfer learning)')
+    parser.add_argument('--val_data_path', default='', type=str,
+                        help='validation dataset path')
 
     parser.add_argument('--output_dir', default='',
                         help='path where to save, empty for no saving')
@@ -149,7 +144,8 @@ def main(args):
     args.input_size = (args.input_channels, args.input_electrodes, args.time_steps)
     args.patch_size = (args.patch_height, args.patch_width)
 
-    misc.init_distributed_mode(args)
+    # misc.init_distributed_mode(args)
+    args.distributed = False
 
     print('job dir: {}'.format(os.path.dirname(os.path.realpath(__file__))))
     print("{}".format(args).replace(', ', ',\n'))
@@ -164,60 +160,8 @@ def main(args):
     cudnn.benchmark = True
 
     # load data
-    # dataset_d_train = SignalDataset(augment=True, args=args)
-    # dataset_d_train_sub = Subset(dataset_d_train, list(range(int(0*1), int(132*1))))
-
-    # if args.transfer_data_path:
-    #     # GENERAL
-    #     dataset_external = SignalDataset(augment=True, transfer=True, args=args)
-    #     dataset_train = ConcatDataset([dataset_d_train_sub, dataset_external])
-
-    #     # # SEED
-    #     # args.data_path = "/home/oturgut/sprai/data/preprocessed/data_SEED_decomposed_ideal_fs200.pt"
-    #     # args.labels_path = "/home/oturgut/sprai/data/preprocessed/labels_3classes_SEED_fs200.pt"
-    #     # dataset_seed = SignalDataset(augment=True, args=args)
-    #     # # dataset_seed = Subset(dataset_seed, list(range(0, 448)))
-    #     # # dataset_seed = ConcatDataset([Subset(dataset_seed, list(range(0, 112))), Subset(dataset_seed, list(range(224, 559)))])
-    #     # # dataset_train = dataset_seed
-    #     # dataset_train = ConcatDataset([dataset_mri_train, dataset_seed])
-
-    #     # # MOIM
-    #     # args.data_path = "/home/oturgut/sprai/data/preprocessed/data_MOIM_snippets60s_decomposed_ideal_fs200.pt"
-    #     # args.labels_path = "/home/oturgut/sprai/data/preprocessed/labels_2classes_MOIM_snippets60s_fs200.pt"
-    #     # dataset_moim = SignalDataset(augment=True, args=args)
-    #     # dataset_train = ConcatDataset([dataset_mri_train, dataset_moim])
-
-    #     # # LEMON
-    #     # args.data_path = "/home/oturgut/sprai/data/preprocessed/data_LEMON_ec_decomposed_2d_fs200.pt"
-    #     # args.labels_path = "/home/oturgut/sprai/data/preprocessed/labels_2classes_LEMON_fs200.pt"
-    #     # dataset_lemon_ec = SignalDataset(augment=True, args=args)
-
-    #     # args.data_path = "/home/oturgut/sprai/data/preprocessed/data_LEMON_eo_decomposed_2d_fs200.pt"
-    #     # args.labels_path = "/home/oturgut/sprai/data/preprocessed/labels_2classes_LEMON_fs200.pt"
-    #     # dataset_lemon_eo = SignalDataset(augment=True, args=args)
-    #     # dataset_train = ConcatDataset([dataset_mri_train, dataset_lemon_ec, dataset_lemon_eo])
-    # else:
-    #     dataset_train = dataset_d_train_sub
-    
-    # dataset_d_validation = SignalDataset(transform=True, augment=False, args=args)
-    # dataset_d_validation_sub = Subset(dataset_d_validation, list(range(int(132*1), int(160*1))))
-    # dataset_val = dataset_d_validation_sub
-
-    # args.data_path = "/home/oturgut/sprai/data/preprocessed/data_HEITMANN_701515_nf_cw_bw_fs200.pt"
-    # args.labels_path = "/home/oturgut/sprai/data/preprocessed/labels_HEITMANN_701515.pt"
-
-    # dataset_h_train = SignalDataset(augment=True, args=args)
-    # dataset_h_train_sub = Subset(dataset_h_train, list(range(int(0*1), int(27*1))))
-    # dataset_train = ConcatDataset([dataset_train, dataset_h_train_sub])
-
-    # dataset_h_validation = SignalDataset(transform=True, augment=False, args=args)
-    # dataset_h_validation_sub = Subset(dataset_h_validation, list(range(int(27*1), int(34*1))))
-    # dataset_val = ConcatDataset([dataset_d_validation_sub, dataset_h_validation_sub])
-
-    dataset_train = SignalDataset(augment=True, args=args)
-    args.data_path = "/home/oturgut/sprai/data/preprocessed/ecg/ecgs_val_ecg_imaging_noBase_gn.pt"
-    args.labels_path = "/home/oturgut/sprai/data/preprocessed/ecg/labelsOneHot/labels_val_CAD_all.pt"
-    dataset_val = SignalDataset(transform=True, augment=False, args=args)
+    dataset_train = SignalDataset(data_path=args.data_path, augment=True, args=args)
+    dataset_val = SignalDataset(data_path=args.val_data_path, transform=True, augment=False, args=args)
 
     print("Training set size: ", len(dataset_train))
     print("Validation set size: ", len(dataset_val))

@@ -122,10 +122,23 @@ def get_args_parser():
                         help='Use class token instead of global pool for classification')
 
     # Dataset parameters
-    parser.add_argument('--data_path', default='_.pt', type=str,
-                        help='dataset path')
-    parser.add_argument('--labels_path', default='_.pt', type=str,
-                        help='labels path')
+    parser.add_argument('--downstream_task', default='classification', type=str,
+                        help='downstream task (default: classification)')
+
+    parser.add_argument('--data_path', default='', type=str,
+                        help='dataset path (default: None)')
+    parser.add_argument('--labels_path', default='', type=str,
+                        help='labels path (default: None)')
+    parser.add_argument('--labels_mask_path', default='', type=str,
+                        help='labels path (default: None)')
+
+    parser.add_argument('--val_data_path', default='', type=str,
+                        help='validation dataset path (default: None)')
+    parser.add_argument('--val_labels_path', default='', type=str,
+                        help='validation labels path (default: None)')
+    parser.add_argument('--val_labels_mask_path', default='', type=str,
+                        help='validation labels path (default: None)')
+
     parser.add_argument('--nb_classes', default=2, type=int,
                         help='number of the classification types')
     parser.add_argument('--pos_label', default=0, type=int,
@@ -211,50 +224,17 @@ def main(args):
     np.random.seed(seed)
 
     cudnn.benchmark = True
+    
+    dataset_train = SignalDataset(data_path=args.data_path, labels_path=args.labels_path, labels_mask_path=args.labels_mask_path,
+                                  downstream_task=args.downstream_task, augment=True, args=args)
+    dataset_val = SignalDataset(data_path=args.val_data_path, labels_path=args.val_labels_path, labels_mask_path=args.val_labels_mask_path, 
+                                downstream_task=args.downstream_task, transform=True, augment=False, args=args)
 
-    # linear probe: weak augmentation
-    # transform_train = transforms.Compose([
-    #         RandomResizedCrop(224, interpolation=3),
-    #         transforms.RandomHorizontalFlip(),
-    #         transforms.ToTensor(),
-    #         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])])
-    # transform_val = transforms.Compose([
-    #         transforms.Resize(256, interpolation=3),
-    #         transforms.CenterCrop(224),
-    #         transforms.ToTensor(),
-    #         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])])
-    # dataset_train = datasets.ImageFolder(os.path.join(args.data_path, 'train'), transform=transform_train)
-    # dataset_val = datasets.ImageFolder(os.path.join(args.data_path, 'val'), transform=transform_val)
-
-    # dataset_d_train = EEGDatasetFast(augment=True, args=args)
-    # dataset_train = Subset(dataset_d_train, list(range(int(0*1), int(132*1))))
-
-    # dataset_d_validation = EEGDatasetFast(transform=True, augment=False, args=args)
-    # if args.eval == False:
-    #     dataset_val = Subset(dataset_d_validation, list(range(int(132*1), int(160*1))))
-    # else:
-    #     dataset_val = Subset(dataset_d_validation, list(range(int(160*1), int(189*1))))
-
-    # args.data_path = "/home/oturgut/PyTorchEEG/data/preprocessed/data_HEITMANN_701515_nf_cw_bw_fs200.pt"
-    # args.labels_path = "/home/oturgut/PyTorchEEG/data/preprocessed/labels_HEITMANN_701515.pt"
-
-    # dataset_h_train = EEGDatasetFast(augment=True, args=args)
-    # dataset_h_train_sub = Subset(dataset_h_train, list(range(int(0*1), int(27*1))))
-    # dataset_train = ConcatDataset([dataset_train, dataset_h_train_sub])
-
-    # dataset_h_validation = EEGDatasetFast(transform=True, augment=False, args=args)
-    # if args.eval == False:
-    #     dataset_h_validation_sub = Subset(dataset_h_validation, list(range(int(27*1), int(34*1))))
-    # else:
-    #     dataset_h_validation_sub = Subset(dataset_h_validation, list(range(int(34*1), int(41*1))))
-    # dataset_val = ConcatDataset([dataset_val, dataset_h_validation_sub])
-        
-    dataset_train = SignalDataset(augment=True, args=args)
-    args.data_path = "/home/oturgut/sprai/data/preprocessed/ecg/data_val_CAD_noBase_gn.pt"
-    args.labels_path = "/home/oturgut/sprai/data/preprocessed/ecg/labels_val_CAD.pt"
-    dataset_val = SignalDataset(transform=True, augment=False, args=args)
-
-    class_weights = 3652.0 / (2.0 * torch.Tensor([1813.0, 1839.0])) # total_nb_samples / (nb_classes * samples_per_class)
+    # train balanced
+    class_weights = 2.0 / (2.0 * torch.Tensor([1.0, 1.0])) # total_nb_samples / (nb_classes * samples_per_class)
+    # train unbalanced
+    # class_weights = 28030.0 / (2.0 * torch.Tensor([26015.0, 2015.0])) # CAD total_nb_samples / (nb_classes * samples_per_class)
+    # class_weights = 5130.0 / (2.0 * torch.Tensor([2565.0, 2565.0])) # BM total_nb_samples / (nb_classes * samples_per_class) 
 
     print("Training set size: ", len(dataset_train))
     print("Validation set size: ", len(dataset_val))
@@ -316,6 +296,7 @@ def main(args):
         patch_size=args.patch_size,
         num_classes=args.nb_classes,
         global_pool=args.global_pool,
+        downstream_task=args.downstream_task,
     )
     model.blocks[-1].attn.forward = attention_forward_wrapper(model.blocks[-1].attn) # required to read out the attention map of the last layer
 
@@ -338,7 +319,8 @@ def main(args):
         print(msg)
 
         if args.global_pool == "attention_pool":
-            assert set(msg.missing_keys) == {'head.weight', 'head.bias', 'fc_norm.weight', 'fc_norm.bias', 'attention_pool.out_proj.weight', 'attention_pool.in_proj_weight', 'attention_pool.out_proj.bias', 'attention_pool.in_proj_bias'}
+            # assert set(msg.missing_keys) == {'head.weight', 'head.bias', 'fc_norm.weight', 'fc_norm.bias', 'attention_pool.out_proj.weight', 'attention_pool.in_proj_weight', 'attention_pool.out_proj.bias', 'attention_pool.in_proj_bias'}
+            pass
         elif args.global_pool:
             assert set(msg.missing_keys) == {'head.weight', 'head.bias', 'fc_norm.weight', 'fc_norm.bias'}
         else:
@@ -389,7 +371,9 @@ def main(args):
     loss_scaler = NativeScaler()
 
     class_weights = class_weights.to(device=device)
-    if args.smoothing > 0.:
+    if args.downstream_task == 'regression':
+        criterion = torch.nn.MSELoss()
+    elif args.smoothing > 0.:
         criterion = torch.nn.CrossEntropyLoss(weight=class_weights, label_smoothing=args.smoothing)
     else:
         criterion = torch.nn.CrossEntropyLoss(weight=class_weights)
@@ -412,26 +396,12 @@ def main(args):
 
             misc.load_model(args=args, model_without_ddp=model_without_ddp, optimizer=optimizer, loss_scaler=loss_scaler)
 
-            test_stats = evaluate(data_loader_val, model, device, args=args)
-            print(f"Accuracy / F1 / AUROC of the network on the {len(dataset_val)} test images: {test_stats['acc1']:.1f}% / {test_stats['f1']:.1f}% / {test_stats['auroc']:.1f}%")
-
-            if log_writer is not None:
-                log_writer.add_scalar('perf/test_acc1', test_stats['acc1'], epoch)
-                #log_writer.add_scalar('perf/test_acc5', test_stats['acc5'], epoch)
-                log_writer.add_scalar('perf/test_acc', test_stats['acc'], epoch)
-                log_writer.add_scalar('perf/test_f1', test_stats['f1'], epoch)
-                log_writer.add_scalar('perf/test_auroc', test_stats['auroc'], epoch)
-                log_writer.add_scalar('perf/test_loss', test_stats['loss'], epoch)
-        
-            if args.wandb == True:
-                training_history = {'epoch' : epoch,
-                                    'test_acc1' : test_stats['acc1'],
-                                    #'test_acc5' : test_stats['acc5'],
-                                    'test_acc' : test_stats['acc'],
-                                    'test_f1' : test_stats['f1'],
-                                    'test_auroc' : test_stats['auroc'],
-                                    'test_loss' : test_stats['loss']}
-                wandb.log(training_history)
+            test_stats = evaluate(data_loader_val, model, device, epoch, log_writer=log_writer, args=args)
+            if args.downstream_task == 'classification':
+                print(f"Accuracy / F1 / AUROC / AUPRC of the network on the {len(dataset_val)} test images: {test_stats['acc']:.1f}% / {test_stats['f1']:.1f}% / {test_stats['auroc']:.1f}% / {test_stats['auprc']:.1f}%")
+            elif args.downstream_task == 'regression':
+                print(f"Root Mean Squared Error (RMSE) / Pearson Correlation Coefficient (PCC) of the network on the {len(dataset_val)} test images:\
+                     {test_stats['rmse']:.4f} / {test_stats['pcc']:.2f}")
 
         exit(0)
 
@@ -440,7 +410,8 @@ def main(args):
     early_stop = EarlyStop(patience=args.patience, max_delta=args.max_delta)
     
     start_time = time.time()
-    max_accuracy, max_f1, max_auroc = 0.0, 0.0, 0.0
+    max_accuracy, max_f1, max_auroc, max_auprc = 0.0, 0.0, 0.0, 0.0
+    min_rmse = np.inf
     for epoch in range(args.start_epoch, args.epochs):
         if True: #args.distributed:
             data_loader_train.sampler.set_epoch(epoch)
@@ -456,32 +427,25 @@ def main(args):
                 args=args, model=model, model_without_ddp=model_without_ddp, optimizer=optimizer,
                 loss_scaler=loss_scaler, epoch=epoch)
 
-        test_stats = evaluate(data_loader_val, model, device, args=args)
-        if early_stop.evaluate_metric(val_metric=test_stats["auroc"]):
+        test_stats = evaluate(data_loader_val, model, device, epoch, log_writer=log_writer, args=args)
+        if args.downstream_task == 'classification' and early_stop.evaluate_metric(val_metric=test_stats["auroc"]):
             break
-        print(f"Accuracy / F1 / AUROC of the network on the {len(dataset_val)} test images: {test_stats['acc1']:.1f}% / {test_stats['f1']:.1f}% / {test_stats['auroc']:.1f}%")
-        max_accuracy = max(max_accuracy, test_stats["acc1"])
-        max_f1 = max(max_f1, test_stats['f1'])
-        max_auroc = max(max_auroc, test_stats['auroc'])
-        print(f'Max accuracy / F1 / AUROC: {max_accuracy:.2f}% / {max_f1:.2f}% / {max_auroc:.2f}%')
-
-        if log_writer is not None:
-            log_writer.add_scalar('perf/test_acc1', test_stats['acc1'], epoch)
-            #log_writer.add_scalar('perf/test_acc5', test_stats['acc5'], epoch)
-            log_writer.add_scalar('perf/test_acc', test_stats['acc'], epoch)
-            log_writer.add_scalar('perf/test_f1', test_stats['f1'], epoch)
-            log_writer.add_scalar('perf/test_auroc', test_stats['auroc'], epoch)
-            log_writer.add_scalar('perf/test_loss', test_stats['loss'], epoch)
-            
-            if args.wandb == True:
-                training_history = {'epoch' : epoch,
-                                    'test_acc1' : test_stats['acc1'],
-                                    #'test_acc5' : test_stats['acc5'],
-                                    'test_acc' : test_stats['acc'],
-                                    'test_f1' : test_stats['f1'],
-                                    'test_auroc' : test_stats['auroc'],
-                                    'test_loss' : test_stats['loss']}
-                wandb.log(training_history)
+        # elif args.downstream_task == 'regression' and early_stop.evaluate_loss(val_loss=test_stats["loss"]):
+        elif args.downstream_task == 'regression' and early_stop.evaluate_metric(val_metric=test_stats["pcc"]):
+            break
+        
+        if args.downstream_task == 'classification':
+            print(f"Accuracy / F1 / AUROC / AUPRC of the network on the {len(dataset_val)} test images: {test_stats['acc']:.1f}% / {test_stats['f1']:.1f}% / {test_stats['auroc']:.1f}% / {test_stats['auprc']:.1f}%")
+            max_accuracy = max(max_accuracy, test_stats["acc"])
+            max_f1 = max(max_f1, test_stats['f1'])
+            max_auroc = max(max_auroc, test_stats['auroc'])
+            max_auprc = max(max_auprc, test_stats['auprc'])
+            print(f'Max Accuracy / F1 / AUROC / AUPRC: {max_accuracy:.2f}% / {max_f1:.2f}% / {max_auroc:.2f}% / {max_auprc:.2f}%\n')
+        elif args.downstream_task == 'regression':
+            print(f"Root Mean Squared Error (RMSE) / Pearson Correlation Coefficient (PCC) of the network on the {len(dataset_val)} test images:\
+                 {test_stats['rmse']:.4f} / {test_stats['pcc']:.2f}")
+            min_rmse = min(min_rmse, test_stats['rmse'])
+            print(f'Min Root Mean Squared Error (RMSE): {min_rmse:.4f}\n')
 
         log_stats = {**{f'train_{k}': v for k, v in train_stats.items()},
                         **{f'test_{k}': v for k, v in test_stats.items()},

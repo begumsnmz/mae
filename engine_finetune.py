@@ -96,7 +96,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
             optimizer.zero_grad()
 
         if args.downstream_task == 'classification':
-            acc1, _ = accuracy(outputs, targets, topk=(1, 5))
+            # acc1, acc5 = accuracy(outputs, targets, topk=(1, 5))
             acc = metric_acc(outputs.argmax(dim=-1), targets)
             f1 = metric_f1(outputs.argmax(dim=-1), targets)[args.pos_label]
             auroc = metric_auroc(torch.nn.functional.softmax(outputs, dim=-1)[:, args.pos_label], targets)
@@ -106,7 +106,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
             [trgts.append(elem.item()) for elem in targets]
 
             batch_size = samples.shape[0]
-            metric_logger.meters['acc1'].update(acc1.item(), n=batch_size)
+            # metric_logger.meters['acc1'].update(acc1.item(), n=batch_size)
             metric_logger.meters['f1'].update(100*f1.item(), n=batch_size)
             metric_logger.meters['auroc'].update(100*auroc.item(), n=batch_size)
             metric_logger.meters['auprc'].update(100*auprc.item(), n=batch_size)
@@ -172,7 +172,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
         log_writer.add_scalar('lr', training_stats["lr"], epoch)
 
         if args.downstream_task == 'classification':
-            log_writer.add_scalar('perf/train_acc1', training_stats["acc1"], epoch)
+            # log_writer.add_scalar('perf/train_acc1', training_stats["acc1"], epoch)
             #log_writer.add_scalar('perf/train_acc5', acc5, epoch)
             log_writer.add_scalar('perf/train_acc', acc, epoch)
             log_writer.add_scalar('perf/train_f1', training_stats["f1"], epoch)
@@ -230,8 +230,6 @@ def evaluate(data_loader, model, device, epoch, log_writer=None, args=None):
     # regression metrics
     metric_rmse = MeanSquaredError(squared=False) #.to(device=device)
     metric_pcc = MultioutputWrapper(torchmetrics.PearsonCorrCoef(num_outputs=1), num_outputs=args.nb_classes).to(device=args.device)
-    # #### THIS IS ONLY FOR SEED ####
-    # metric_f1 = torchmetrics.F1Score(num_classes=3, threshold=0.5, average=None).to(device=device)
 
     for batch in metric_logger.log_every(data_loader, 10, header):
         images = batch[0]
@@ -257,7 +255,7 @@ def evaluate(data_loader, model, device, epoch, log_writer=None, args=None):
 
         metric_logger.update(loss=loss.item())
         if args.downstream_task == 'classification':
-            acc1, acc5 = accuracy(output, target, topk=(1, 5))
+            # acc1, acc5 = accuracy(output, target, topk=(1, 5))
             acc = metric_acc(output.argmax(dim=-1), target)
             f1 = metric_f1(output.argmax(dim=-1), target)[args.pos_label]
             auroc = metric_auroc(torch.nn.functional.softmax(output, dim=-1)[:, args.pos_label], target)
@@ -267,8 +265,8 @@ def evaluate(data_loader, model, device, epoch, log_writer=None, args=None):
             [trgts.append(elem.item()) for elem in target]
 
             batch_size = images.shape[0]
-            metric_logger.meters['acc1'].update(acc1.item(), n=batch_size)
-            metric_logger.meters['acc5'].update(acc5.item(), n=batch_size)
+            # metric_logger.meters['acc1'].update(acc1.item(), n=batch_size)
+            # metric_logger.meters['acc5'].update(acc5.item(), n=batch_size)
             metric_logger.meters['acc'].update(100*acc.item(), n=batch_size)
             metric_logger.meters['f1'].update(100*f1.item(), n=batch_size)
             metric_logger.meters['auroc'].update(100*auroc.item(), n=batch_size)
@@ -325,7 +323,7 @@ def evaluate(data_loader, model, device, epoch, log_writer=None, args=None):
 
     if log_writer is not None:
         if args.downstream_task == 'classification':
-            log_writer.add_scalar('perf/test_acc1', test_stats['acc1'], epoch)
+            # log_writer.add_scalar('perf/test_acc1', test_stats['acc1'], epoch)
             #log_writer.add_scalar('perf/test_acc5', test_stats['acc5'], epoch)
             log_writer.add_scalar('perf/test_acc', test_stats['acc'], epoch)
             log_writer.add_scalar('perf/test_f1', test_stats['f1'], epoch)
@@ -340,7 +338,7 @@ def evaluate(data_loader, model, device, epoch, log_writer=None, args=None):
             test_history = {'epoch' : epoch,
                                 'test_loss' : test_stats['loss']}
             if args.downstream_task == 'classification':
-                test_history['test_acc1'] = test_stats['acc1']
+                # test_history['test_acc1'] = test_stats['acc1']
                 # test_history['test_acc5'] = test_stats['acc5']
                 test_history['test_acc'] = test_stats['acc']
                 test_history['test_f1'] = test_stats['f1']

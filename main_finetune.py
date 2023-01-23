@@ -257,8 +257,10 @@ def main(args):
 
     cudnn.benchmark = True
     
-    dataset_train = SignalDataset(data_path=args.data_path, labels_path=args.labels_path, labels_mask_path=args.labels_mask_path, augment=True, args=args)
-    dataset_val = SignalDataset(data_path=args.val_data_path, labels_path=args.val_labels_path, labels_mask_path=args.val_labels_mask_path, transform=True, augment=False, args=args)
+    dataset_train = SignalDataset(data_path=args.data_path, labels_path=args.labels_path, labels_mask_path=args.labels_mask_path,
+                                  downstream_task=args.downstream_task, augment=True, args=args)
+    dataset_val = SignalDataset(data_path=args.val_data_path, labels_path=args.val_labels_path, labels_mask_path=args.val_labels_mask_path, 
+                                downstream_task=args.downstream_task, transform=True, augment=False, args=args)
 
     # train balanced
     class_weights = 2.0 / (2.0 * torch.Tensor([1.0, 1.0])) # total_nb_samples / (nb_classes * samples_per_class)
@@ -409,7 +411,6 @@ def main(args):
 
     class_weights = class_weights.to(device=device)
     if args.downstream_task == 'regression':
-        # regression, else classification
         criterion = torch.nn.MSELoss()
     elif mixup_fn is not None:
         # smoothing is handled with mixup label transform
@@ -438,12 +439,9 @@ def main(args):
             misc.load_model(args=args, model_without_ddp=model_without_ddp, optimizer=optimizer, loss_scaler=loss_scaler)
 
             test_stats = evaluate(data_loader_val, model, device, epoch, log_writer=log_writer, args=args)
-
             if args.downstream_task == 'classification':
-                # classification
-                print(f"Accuracy / F1 / AUROC of the network on the {len(dataset_val)} test images: {test_stats['acc1']:.1f}% / {test_stats['f1']:.1f}% / {test_stats['auroc']:.1f}%")
+                print(f"Accuracy / F1 / AUROC / AUPRC of the network on the {len(dataset_val)} test images: {test_stats['acc']:.1f}% / {test_stats['f1']:.1f}% / {test_stats['auroc']:.1f}% / {test_stats['auprc']:.1f}%")
             elif args.downstream_task == 'regression':
-                # regression
                 print(f"Root Mean Squared Error (RMSE) / Pearson Correlation Coefficient (PCC) of the network on the {len(dataset_val)} test images:\
                      {test_stats['rmse']:.4f} / {test_stats['pcc']:.2f}")
         
@@ -454,7 +452,7 @@ def main(args):
     early_stop = EarlyStop(patience=args.patience, max_delta=args.max_delta)
     
     start_time = time.time()
-    max_accuracy, max_f1, max_auroc = 0.0, 0.0, 0.0
+    max_accuracy, max_f1, max_auroc, max_auprc = 0.0, 0.0, 0.0, 0.0
     min_rmse = np.inf
     for epoch in range(args.start_epoch, args.epochs):
         # if epoch == 2:
@@ -485,14 +483,13 @@ def main(args):
             break
 
         if args.downstream_task == 'classification':
-            # classification
-            print(f"Accuracy / F1 / AUROC of the network on the {len(dataset_val)} test images: {test_stats['acc1']:.1f}% / {test_stats['f1']:.1f}% / {test_stats['auroc']:.1f}%")
-            max_accuracy = max(max_accuracy, test_stats["acc1"])
+            print(f"Accuracy / F1 / AUROC / AUPRC of the network on the {len(dataset_val)} test images: {test_stats['acc']:.1f}% / {test_stats['f1']:.1f}% / {test_stats['auroc']:.1f}% / {test_stats['auprc']:.1f}%")
+            max_accuracy = max(max_accuracy, test_stats["acc"])
             max_f1 = max(max_f1, test_stats['f1'])
             max_auroc = max(max_auroc, test_stats['auroc'])
-            print(f'Max Accuracy / F1 / AUROC: {max_accuracy:.2f}% / {max_f1:.2f}% / {max_auroc:.2f}%\n')
+            max_auprc = max(max_auprc, test_stats['auprc'])
+            print(f'Max Accuracy / F1 / AUROC / AUPRC: {max_accuracy:.2f}% / {max_f1:.2f}% / {max_auroc:.2f}% / {max_auprc:.2f}%\n')
         elif args.downstream_task == 'regression':
-            # regression
             print(f"Root Mean Squared Error (RMSE) / Pearson Correlation Coefficient (PCC) of the network on the {len(dataset_val)} test images:\
                  {test_stats['rmse']:.4f} / {test_stats['pcc']:.2f}")
             min_rmse = min(min_rmse, test_stats['rmse'])

@@ -14,15 +14,23 @@ import util.augmentations as augmentations
 
 class SignalDataset(Dataset):
     """Fast EEGDataset (fetching prepared data and labels from files)"""
-    def __init__(self, data_path, labels_path, labels_mask_path=None, transform=False, augment=False, args=None) -> None:
+    def __init__(self, data_path, labels_path=None, labels_mask_path=None, downstream_task=None, 
+                 transform=False, augment=False, args=None) -> None:
         """load data and labels from files"""
+        self.downstream_task = downstream_task
+        
         self.transform = transform
         self.augment = augment
         
         self.args = args
 
         self.data = torch.load(data_path, map_location=torch.device('cpu')) # load to ram
-        self.labels = torch.load(labels_path, map_location=torch.device('cpu')) # load to ram
+
+        if labels_path:
+            self.labels = torch.load(labels_path, map_location=torch.device('cpu')) # load to ram
+        else:
+            self.labels = torch.zeros(size=(len(self.data), ))
+
         if labels_mask_path:
             self.labels_mask = torch.load(labels_mask_path, map_location=torch.device('cpu')) # load to ram
         else:
@@ -30,7 +38,7 @@ class SignalDataset(Dataset):
 
     def __len__(self) -> int:
         """return the number of samples in the dataset"""
-        return len(self.labels)
+        return len(self.data)
 
     def __getitem__(self, idx) -> Tuple[Any, Any]:
         """return a sample from the dataset at index idx"""
@@ -57,7 +65,7 @@ class SignalDataset(Dataset):
                                           ])
             data = augment(data)
         
-        if self.args.downstream_task == 'classification':
+        if self.downstream_task == 'classification':
             label = label.type(torch.LongTensor).argmax(dim=-1)
             label_mask = torch.ones_like(label)
 

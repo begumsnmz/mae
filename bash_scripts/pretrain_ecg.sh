@@ -1,16 +1,26 @@
 #!/usr/bin/bash
-# pretraining
+# Pre-training
+ 
+#SBATCH --job-name=mae_pre
+#SBATCH --output=/home/guests/oezguen_turgut/sprai/slurm_output/pre/ecg/mae_pre-%A.out  # Standard output of the script (Can be absolute or relative path). %A adds the job id to the file name so you can launch the same script multiple times and get different logging files
+#SBATCH --error=/home/guests/oezguen_turgut/sprai/slurm_output/pre/ecg/mae_pre-%A.err  # Standard error of the script
+#SBATCH --time=7-23:59:59  # Limit on the total run time (format: days-hours:minutes:seconds)
+#SBATCH --gres=gpu:1  # Number of GPUs if needed
+#SBATCH --cpus-per-task=24  # Number of CPUs (Don't use more than 24 per GPU)
+#SBATCH --mem=126G  # Memory in GB (Don't use more than 126G per GPU)
+
+# load python module
+ml python/anaconda3
+
+# activate corresponding environment
+conda deactivate # If you launch your script from a terminal where your environment is already loaded, conda won't activate the environment. This guards against that. Not necessary if you always run this script from a clean terminal
+conda activate mae
 
 # Basic parameters
-external="off"
+seed="0"
+batch_size="128"
+accum_iter=(1)
 
-if [ "$external" = "on" ]; then
-    batch_size="32"
-    accum_iter=(4)
-else
-    batch_size="128"
-    accum_iter=(1)
-fi
 epochs="400"
 warmup_epochs="40"
 
@@ -38,13 +48,10 @@ blr_array=(1e-5)
 weight_decay=(0.15)
 
 # Dataset parameters
-data_path="/home/oturgut/sprai/data/preprocessed/ecg/ecgs_train_ecg_imaging_noBase_gn.pt"
-labels_path="/home/oturgut/sprai/data/preprocessed/ecg/labelsOneHot/labels_train_CAD_all.pt"
+data_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/ecgs_train_ecg_imaging_noBase_gn.pt"
+val_data_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/ecgs_val_ecg_imaging_noBase_gn.pt"
 
-transfer_data_path=""
-transfer_labels_path=""
-
-num_workers="32"
+num_workers="24"
 
 # Log specifications
 save_output="False"
@@ -52,9 +59,7 @@ wandb="True"
 wandb_project="MAE_ECG_Pre"
 
 # Checkpoints
-resume_from_ckpt="False"
 # resume="/home/oturgut/sprai/mae_he/mae/output/pre/noExternal/tiny/2d/t37000/p65x50/m0.75/pre_noExternal_b"$(($batch_size*$accum_iter))"_blr"$blr_array"/checkpoint-450.pth"
-
 
 for blr in "${blr_array[@]}"
 do
@@ -63,24 +68,16 @@ do
         for mr in "${mask_ratio[@]}"
         do
 
-            if [ "$external" = "on" ]; then
-                folder="ecg/-"
-            else
-                folder="ecg/noExternal"
-            fi
-
             pre_data="pre_b"$(($batch_size*$acc_it))"_blr"$blr
 
+            folder="ecg/noExternal"
             subfolder=$model_size"/1d/t"$time_steps"/p"$patch_height"x"$patch_width"/wd"$weight_decay"/m"$mr"/v1"
-            output_dir="/home/oturgut/sprai/mae_he/mae/output/pre/"$folder"/"$subfolder"/"$pre_data
-            log_dir="/home/oturgut/sprai/mae_he/mae/logs/pre/"$folder"/"$subfolder"/"$pre_data
-        
-            cmd="python3 main_pretrain.py --jitter_sigma $jitter_sigma --rescaling_sigma $rescaling_sigma --ft_surr_phase_noise $ft_surr_phase_noise --input_channels $input_channels --input_electrodes $input_electrodes --time_steps $time_steps --patch_height $patch_height --patch_width $patch_width --model $model --batch_size $batch_size --epochs $epochs --accum_iter $acc_it --mask_ratio $mr --weight_decay $weight_decay --blr $blr --warmup_epoch $warmup_epochs --data_path $data_path --labels_path $labels_path --log_dir $log_dir --num_workers $num_workers"
-            
-            if [ "$external" = "on" ]; then
-                cmd=$cmd" --transfer_data_path $transfer_data_path --transfer_labels_path $transfer_labels_path"
-            fi
 
+            output_dir="/home/guests/oezguen_turgut/sprai/mae_he/mae/output/pre/"$folder"/"$subfolder"/"$pre_data
+            log_dir="/home/guests/oezguen_turgut/sprai/mae_he/mae/logs/pre/"$folder"/"$subfolder"/"$pre_data
+        
+            cmd="python3 main_pretrain.py --seed $seed --jitter_sigma $jitter_sigma --rescaling_sigma $rescaling_sigma --ft_surr_phase_noise $ft_surr_phase_noise --input_channels $input_channels --input_electrodes $input_electrodes --time_steps $time_steps --patch_height $patch_height --patch_width $patch_width --model $model --batch_size $batch_size --epochs $epochs --accum_iter $acc_it --mask_ratio $mr --weight_decay $weight_decay --blr $blr --warmup_epoch $warmup_epochs --data_path $data_path --val_data_path $val_data_path --log_dir $log_dir --num_workers $num_workers"
+            
             if [ "$norm_pix_loss" = "True" ]; then
                 cmd=$cmd" --norm_pix_loss"
             fi
@@ -93,7 +90,7 @@ do
                 cmd=$cmd" --output_dir $output_dir"
             fi
 
-            if [ "$resume_from_ckpt" = "True" ]; then
+            if [ ! -z "$resume" ]; then
                 cmd=$cmd" --resume $resume"
             fi
 
