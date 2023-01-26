@@ -476,7 +476,7 @@ def main(args):
                 loss_scaler=loss_scaler, epoch=epoch)
 
         test_stats = evaluate(data_loader_val, model, device, epoch, log_writer=log_writer, args=args)
-        if args.downstream_task == 'classification' and early_stop.evaluate_metric(val_metric=test_stats["auroc"]):
+        if args.downstream_task == 'classification' and early_stop.evaluate_metric(val_metric=test_stats["auprc"]):
             break
         # elif args.downstream_task == 'regression' and early_stop.evaluate_loss(val_loss=test_stats["loss"]):
         elif args.downstream_task == 'regression' and early_stop.evaluate_metric(val_metric=test_stats["pcc"]):

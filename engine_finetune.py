@@ -107,6 +107,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
 
             batch_size = samples.shape[0]
             # metric_logger.meters['acc1'].update(acc1.item(), n=batch_size)
+            metric_logger.meters['acc'].update(100*acc.item(), n=batch_size)
             metric_logger.meters['f1'].update(100*f1.item(), n=batch_size)
             metric_logger.meters['auroc'].update(100*auroc.item(), n=batch_size)
             metric_logger.meters['auprc'].update(100*auprc.item(), n=batch_size)
@@ -140,6 +141,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
     if args.downstream_task == 'classification':
         acc = 100*metric_acc.compute()
         metric_acc.reset()
+        training_stats["acc"] = acc.item()
 
         f1 = 100*metric_f1.compute()[args.pos_label] # returns the f1 score
         metric_f1.reset()
@@ -152,7 +154,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
         metric_auroc.reset()
         training_stats["auroc"] = auroc.item()
 
-        auprc = sklearn.metrics.average_precision_score(y_true=trgts, y_score=preds, average='micro', pos_label=args.pos_label)
+        auprc = 100*sklearn.metrics.average_precision_score(y_true=trgts, y_score=preds, average='micro', pos_label=args.pos_label)
         training_stats["auprc"] = auprc.item()
     elif args.downstream_task == 'regression':
         rmse = metric_rmse.compute()
@@ -187,7 +189,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
             training_history['loss'] = training_stats["loss"]
             training_history['lr'] = training_stats["lr"]
             if args.downstream_task == 'classification':
-                training_history['acc'] = training_stats["acc1"]
+                training_history['acc'] = training_stats["acc"]
                 training_history['f1'] = training_stats["f1"]
                 training_history['auroc'] = training_stats["auroc"]
                 training_history['auprc'] = training_stats["auprc"]
@@ -291,6 +293,7 @@ def evaluate(data_loader, model, device, epoch, log_writer=None, args=None):
     if args.downstream_task == 'classification':
         acc = 100*metric_acc.compute()
         metric_acc.reset()
+        test_stats["acc"] = acc.item()
 
         f1 = 100*metric_f1.compute()[args.pos_label] # returns the f1 score
         metric_f1.reset()
@@ -303,7 +306,7 @@ def evaluate(data_loader, model, device, epoch, log_writer=None, args=None):
         metric_auroc.reset()
         test_stats["auroc"] = auroc.item()
 
-        auprc = sklearn.metrics.average_precision_score(y_true=trgts, y_score=preds, average='micro', pos_label=args.pos_label)
+        auprc = 100*sklearn.metrics.average_precision_score(y_true=trgts, y_score=preds, average='micro', pos_label=args.pos_label)
         test_stats["auprc"] = auprc.item()
     elif args.downstream_task == 'regression':
         rmse = metric_rmse.compute()
@@ -315,8 +318,8 @@ def evaluate(data_loader, model, device, epoch, log_writer=None, args=None):
         test_stats["pcc"] = torch.tensor(pcc).mean().item()
 
     if args.downstream_task == 'classification':
-        print('* Acc@1 {top1.global_avg:.3f} Acc@5 {top5.global_avg:.3f} F1 {f1:.3f} AUROC {auroc:.3f} AUPRC {auprc:.3f} loss {losses:.3f}'
-            .format(top1=metric_logger.acc1, top5=metric_logger.acc5, f1=test_stats["f1"], auroc=test_stats["auroc"], auprc=test_stats["auprc"], losses=test_stats["loss"]))
+        print('* Acc@1 {top1.global_avg:.3f} F1 {f1:.3f} AUROC {auroc:.3f} AUPRC {auprc:.3f} loss {losses:.3f}'
+            .format(top1=metric_logger.acc, f1=test_stats["f1"], auroc=test_stats["auroc"], auprc=test_stats["auprc"], losses=test_stats["loss"]))
     elif args.downstream_task == 'regression':
         print('* RMSE {rmse:.3f} PCC {pcc:.2f} loss {losses:.3f}'
             .format(rmse=test_stats["rmse"], pcc=test_stats["pcc"], losses=test_stats["loss"]))
