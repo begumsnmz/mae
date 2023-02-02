@@ -25,7 +25,7 @@ epochs="400"
 warmup_epochs="5"
 
 # Callback parameters
-patience="40"
+patience="25"
 max_delta="0.75" # for AUROC
 
 # Model parameters
@@ -47,25 +47,25 @@ drop_path=(0.1)
 layer_decay=(0.75)
 
 # Optimizer parameters
-blr=(1e-6) # 3e-5 if from scratch
+blr=(1e-5) # 3e-5 if from scratch
 min_lr="0.0"
 weight_decay=(0.2)
 
 # Criterion parameters
-smoothing=(0.0)
+smoothing=(0.2)
 
-from_scratch="False"
+from_scratch="True"
 
 # Dataset parameters
 # Training balanced
-data_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/ecgs_train_flutter_all_balanced_noBase_gn.pt"
-labels_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/labelsOneHot/labels_train_flutter_all_balanced.pt"
-downstream_task="classification"
-nb_classes="2"
-# data_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/ecgs_train_diabetes_all_balanced_noBase_gn.pt"
-# labels_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/labelsOneHot/labels_train_diabetes_all_balanced.pt"
+# data_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/ecgs_train_flutter_all_balanced_noBase_gn.pt"
+# labels_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/labelsOneHot/labels_train_flutter_all_balanced.pt"
 # downstream_task="classification"
 # nb_classes="2"
+data_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/ecgs_train_diabetes_all_balanced_noBase_gn.pt"
+labels_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/labelsOneHot/labels_train_diabetes_all_balanced.pt"
+downstream_task="classification"
+nb_classes="2"
 # data_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/ecgs_train_CAD_all_balanced_noBase_gn.pt"
 # labels_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/labelsOneHot/labels_train_CAD_all_balanced.pt"
 # downstream_task="classification"
@@ -91,12 +91,12 @@ nb_classes="2"
 # upper_bnd="82" #6+4+4+4+3+3+17+17+17+7
 
 # Validation unbalanced
-val_data_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/ecgs_val_ecg_imaging_noBase_gn.pt"
-val_labels_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/labelsOneHot/labels_val_flutter_all.pt"
-pos_label="1"
 # val_data_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/ecgs_val_ecg_imaging_noBase_gn.pt"
-# val_labels_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/labelsOneHot/labels_val_diabetes_all.pt"
+# val_labels_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/labelsOneHot/labels_val_flutter_all.pt"
 # pos_label="1"
+val_data_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/ecgs_val_ecg_imaging_noBase_gn.pt"
+val_labels_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/labelsOneHot/labels_val_diabetes_all.pt"
+pos_label="1"
 # val_data_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/ecgs_val_ecg_imaging_noBase_gn.pt"
 # val_labels_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/labelsOneHot/labels_val_CAD_all.pt"
 # pos_label="1"
@@ -117,9 +117,9 @@ attention_pool=(True)
 num_workers="24"
 
 # Log specifications
-save_output="True"
+save_output="False"
 wandb="True"
-wandb_project="MAE_ECG_Fin_Tiny_Flutter_v1"
+wandb_project="MAE_ECG_Fin_Tiny_Diabetes_v1"
 
 # Pretraining specifications
 pre_batch_size=(128)
@@ -148,7 +148,7 @@ do
                         for smth in "${smoothing[@]}"
                         do
 
-                            folder="ecg/Flutter/MAE"
+                            folder="ecg/Diabetes/Scratch"
                             subfolder=("seed$sd/"$model_size"/t2500/p"$patch_height"x"$patch_width"/ld"$ld"/dp"$dp"/smth"$smth"/wd"$weight_decay"/m0.8/atp")
 
                             pre_data="b"$pre_batch_size"_blr"$pre_blr

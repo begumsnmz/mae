@@ -106,7 +106,7 @@ def get_args_parser():
     # Callback parameters
     parser.add_argument('--patience', default=-1, type=float,
                         help='Early stopping whether val is worse than train for specified nb of epochs (default: -1, i.e. no early stopping)')
-    parser.add_argument('--max_delta', default=0, type=int,
+    parser.add_argument('--max_delta', default=0, type=float,
                         help='Early stopping threshold (val has to be worse than (train+delta)) (default: 0)')
 
     # Criterion parameters

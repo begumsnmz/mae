@@ -17,16 +17,16 @@ conda deactivate # If you launch your script from a terminal where your environm
 conda activate mae
 
 # Basic parameters seed = [0, 101, 202, 303, 404]
-seed=(0 101 202 303 404)
-batch_size=(32)
+seed=(303 404)
+batch_size=(8)
 accum_iter=(1)
 
 epochs="400"
 warmup_epochs="5"
 
 # Callback parameters
-patience="40"
-max_delta="0.75" # for AUROC
+patience="25"
+max_delta="0.5" # for AUROC
 
 # Model parameters
 input_channels="1"
@@ -47,29 +47,29 @@ drop_path=(0.1)
 layer_decay=(0.75)
 
 # Optimizer parameters
-blr=(1e-6) # 3e-5 if from scratch
+blr=(3e-5) # 3e-5 if from scratch
 min_lr="0.0"
-weight_decay=(0.2)
+weight_decay=(0.1)
 
 # Criterion parameters
-smoothing=(0.0)
+smoothing=(0.2)
 
-from_scratch="False"
+from_scratch="True"
 
 # Dataset parameters
 # Training balanced
-data_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/ecgs_train_flutter_all_balanced_noBase_gn.pt"
-labels_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/labelsOneHot/labels_train_flutter_all_balanced.pt"
-downstream_task="classification"
-nb_classes="2"
+# data_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/ecgs_train_flutter_all_balanced_noBase_gn.pt"
+# labels_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/labelsOneHot/labels_train_flutter_all_balanced.pt"
+# downstream_task="classification"
+# nb_classes="2"
 # data_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/ecgs_train_diabetes_all_balanced_noBase_gn.pt"
 # labels_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/labelsOneHot/labels_train_diabetes_all_balanced.pt"
 # downstream_task="classification"
 # nb_classes="2"
-# data_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/ecgs_train_CAD_all_balanced_noBase_gn.pt"
-# labels_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/labelsOneHot/labels_train_CAD_all_balanced.pt"
-# downstream_task="classification"
-# nb_classes="2"
+data_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/ecgs_train_CAD_all_balanced_noBase_gn.pt"
+labels_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/labelsOneHot/labels_train_CAD_all_balanced.pt"
+downstream_task="classification"
+nb_classes="2"
 # data_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/ecgs_train_BMI_balanced_noBase_gn.pt"
 # labels_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/labelsOneHot/labels_train_BMI_balanced.pt"
 # downstream_task="classification"
@@ -91,15 +91,15 @@ nb_classes="2"
 # upper_bnd="82" #6+4+4+4+3+3+17+17+17+7
 
 # Validation unbalanced
-val_data_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/ecgs_val_ecg_imaging_noBase_gn.pt"
-val_labels_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/labelsOneHot/labels_val_flutter_all.pt"
-pos_label="1"
+# val_data_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/ecgs_val_ecg_imaging_noBase_gn.pt"
+# val_labels_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/labelsOneHot/labels_val_flutter_all.pt"
+# pos_label="1"
 # val_data_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/ecgs_val_ecg_imaging_noBase_gn.pt"
 # val_labels_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/labelsOneHot/labels_val_diabetes_all.pt"
 # pos_label="1"
-# val_data_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/ecgs_val_ecg_imaging_noBase_gn.pt"
-# val_labels_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/labelsOneHot/labels_val_CAD_all.pt"
-# pos_label="1"
+val_data_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/ecgs_val_ecg_imaging_noBase_gn.pt"
+val_labels_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/labelsOneHot/labels_val_CAD_all.pt"
+pos_label="1"
 # val_data_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/ecgs_val_BMI_noBase_gn.pt"
 # val_labels_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/labelsOneHot/labels_val_BMI.pt"
 # pos_label="0"
@@ -119,7 +119,7 @@ num_workers="24"
 # Log specifications
 save_output="True"
 wandb="True"
-wandb_project="MAE_ECG_Fin_Tiny_Flutter_v1"
+wandb_project="MAE_ECG_Fin_Tiny_CAD_v1"
 
 # Pretraining specifications
 pre_batch_size=(128)
@@ -148,13 +148,13 @@ do
                         for smth in "${smoothing[@]}"
                         do
 
-                            folder="ecg/Flutter/MAE"
+                            folder="ecg/CAD/Scratch"
                             subfolder=("seed$sd/"$model_size"/t2500/p"$patch_height"x"$patch_width"/ld"$ld"/dp"$dp"/smth"$smth"/wd"$weight_decay"/m0.8/atp")
 
                             pre_data="b"$pre_batch_size"_blr"$pre_blr
                             # finetune="/home/guests/oezguen_turgut/sprai/mae_he/mae/output/pre/"$folder"/"$subfolder"/pre_"$pre_data"/checkpoint-399.pth"
-                            # finetune="/home/guests/oezguen_turgut/ECGMultimodalContrastiveLearning/oezguen/checkpoints/mm_v230_mae_checkpoint.pth"
-                            finetune="/home/guests/oezguen_turgut/ECGMultimodalContrastiveLearning/pretrained_checkpoints/tiny/v1/checkpoint-399.pth"
+                            finetune="/home/guests/oezguen_turgut/ECGMultimodalContrastiveLearning/oezguen/checkpoints/mm_v230_mae_checkpoint.pth"
+                            # finetune="/home/guests/oezguen_turgut/ECGMultimodalContrastiveLearning/pretrained_checkpoints/tiny/v1/checkpoint-399.pth"
 
                             output_dir="/home/guests/oezguen_turgut/sprai/mae_he/mae/output/fin/"$folder"/"$subfolder"/fin_b"$(($bs*$accum_iter))"_blr"$lr"_"$pre_data
                             log_dir="/home/guests/oezguen_turgut/sprai/mae_he/mae/logs/fin/"$folder"/"$subfolder"/fin_b"$(($bs*$accum_iter))"_blr"$lr"_"$pre_data

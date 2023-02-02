@@ -48,6 +48,11 @@ from torch.utils.data import Subset, ConcatDataset
 def get_args_parser():
     parser = argparse.ArgumentParser('MAE fine-tuning for image classification', add_help=False)
     # Basic parameters
+    # parser.add_argument('--lower_bnd', type=int, default=0, metavar='N',
+    #                     help='lower_bnd')
+    # parser.add_argument('--upper_bnd', type=int, default=0, metavar='N',
+    #                     help='upper_bnd')
+
     parser.add_argument('--batch_size', default=64, type=int,
                         help='Batch size per GPU (effective batch size is batch_size * accum_iter * # gpus')
     parser.add_argument('--epochs', default=50, type=int)
@@ -114,7 +119,7 @@ def get_args_parser():
     # Callback parameters
     parser.add_argument('--patience', default=-1, type=float,
                         help='Early stopping whether val is worse than train for specified nb of epochs (default: -1, i.e. no early stopping)')
-    parser.add_argument('--max_delta', default=0, type=int,
+    parser.add_argument('--max_delta', default=0, type=float,
                         help='Early stopping threshold (val has to be worse than (train+delta)) (default: 0)')
 
     # Criterion parameters
@@ -476,7 +481,7 @@ def main(args):
                 loss_scaler=loss_scaler, epoch=epoch)
 
         test_stats = evaluate(data_loader_val, model, device, epoch, log_writer=log_writer, args=args)
-        if args.downstream_task == 'classification' and early_stop.evaluate_metric(val_metric=test_stats["auprc"]):
+        if args.downstream_task == 'classification' and early_stop.evaluate_metric(val_metric=test_stats["auroc"]):
             break
         # elif args.downstream_task == 'regression' and early_stop.evaluate_loss(val_loss=test_stats["loss"]):
         elif args.downstream_task == 'regression' and early_stop.evaluate_metric(val_metric=test_stats["pcc"]):
