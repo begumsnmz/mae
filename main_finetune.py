@@ -83,6 +83,15 @@ def get_args_parser():
                         help='Drop path rate (default: 0.1)')
                         
     # Augmentation parameters
+    parser.add_argument('--masking_blockwise', action='store_true', default=False,
+                        help='Masking blockwise in channel and time dimension (instead of random masking)')
+    parser.add_argument('--mask_ratio', default=0.0, type=float,
+                        help='Masking ratio (percentage of removed patches)')
+    parser.add_argument('--mask_c_ratio', default=0.0, type=float,
+                        help='Masking ratio in channel dimension (percentage of removed patches)')
+    parser.add_argument('--mask_t_ratio', default=0.0, type=float,
+                        help='Masking ratio in time dimension (percentage of removed patches)')
+
     parser.add_argument('--jitter_sigma', default=0.2, type=float,
                         help='Jitter sigma N(0, sigma) (default: 0.2)')
     parser.add_argument('--rescaling_sigma', default=0.5, type=float,
@@ -344,6 +353,10 @@ def main(args):
         drop_path_rate=args.drop_path,
         global_pool=args.global_pool,
         downstream_task=args.downstream_task,
+        masking_blockwise=args.masking_blockwise,
+        mask_ratio=args.mask_ratio,
+        mask_c_ratio=args.mask_c_ratio,
+        mask_t_ratio=args.mask_t_ratio
     )
     model.blocks[-1].attn.forward = attention_forward_wrapper(model.blocks[-1].attn) # required to read out the attention map of the last layer
 

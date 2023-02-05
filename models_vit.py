@@ -20,8 +20,14 @@ import timm.models.vision_transformer
 class VisionTransformer(timm.models.vision_transformer.VisionTransformer):
     """ Vision Transformer with support for global average pooling
     """
-    def __init__(self, global_pool=False, downstream_task='classification', **kwargs):
+    def __init__(self, global_pool=False, downstream_task='classification', 
+                 masking_blockwise=False, mask_ratio=0.0, mask_c_ratio=0.0, mask_t_ratio=0.0, **kwargs):
         super(VisionTransformer, self).__init__(**kwargs)
+
+        self.masking_blockwise = masking_blockwise
+        self.mask_ratio = mask_ratio
+        self.mask_c_ratio = mask_c_ratio
+        self.mask_t_ratio = mask_t_ratio
 
         self.downstream_task = downstream_task
 
@@ -35,13 +41,86 @@ class VisionTransformer(timm.models.vision_transformer.VisionTransformer):
 
             del self.norm  # remove the original norm
 
+    def random_masking(self, x, mask_ratio):
+        """
+        Perform per-sample random masking by per-sample shuffling.
+        Per-sample shuffling is done by argsort random noise.
+        x: [N, L, D], sequence
+        """
+        N, L, D = x.shape  # batch, length, dim
+        len_keep = int(L * (1 - mask_ratio))
+        
+        noise = torch.rand(N, L, device=x.device)  # noise in [0, 1]
+        
+        # sort noise for each sample
+        ids_shuffle = torch.argsort(noise, dim=1)  # ascend: small is keep, large is remove
+        ids_restore = torch.argsort(ids_shuffle, dim=1)
+
+        # keep the first subset
+        ids_keep = ids_shuffle[:, :len_keep]
+        x_masked = torch.gather(x, dim=1, index=ids_keep.unsqueeze(-1).repeat(1, 1, D))
+
+        # generate the binary mask: 0 is keep, 1 is remove
+        mask = torch.ones([N, L], device=x.device)
+        mask[:, :len_keep] = 0
+
+        # unshuffle to get the binary mask
+        mask = torch.gather(mask, dim=1, index=ids_restore)
+
+        return x_masked, mask, ids_restore
+
+    def random_masking_blockwise(self, x, mask_c_ratio, mask_t_ratio):
+        """
+        2D: ECG recording (N, 1, C, T) (masking c and t under mask_c_ratio and mask_t_ratio)
+        Perform per-sample random masking by per-sample shuffling.
+        Per-sample shuffling is done by argsort random noise.
+        x: [N, L, D], sequence
+        """
+        N, L, D = x.shape  # batch, length, dim
+        C, T = int(self.img_size[-2] / self.patch_size[-2]), int(self.img_size[-1] / self.patch_size[-1])
+        
+        # mask C
+        x = x.reshape(N, C, T, D)
+        len_keep_C = int(C * (1 - mask_c_ratio))
+        noise = torch.rand(N, C, device=x.device)  # noise in [0, 1]
+        # sort noise for each sample
+        ids_shuffle = torch.argsort(noise, dim=1)  # ascend: small is keep, large is remove
+        ids_keep = ids_shuffle[:, :len_keep_C]
+        index = ids_keep.unsqueeze(-1).unsqueeze(-1).repeat(1, 1, T, D)
+        x = torch.gather(x, dim=1, index=index) # N, len_keep_C(C'), T, D
+
+        # mask T
+        x = x.permute(0, 2, 1, 3) # N C' T D => N T C' D
+        len_keep_T = int(T * (1 - mask_t_ratio))
+        noise = torch.rand(N, T, device=x.device)  # noise in [0, 1]
+        # sort noise for each sample
+        ids_shuffle = torch.argsort(noise, dim=1)  # ascend: small is keep, large is remove
+        ids_keep = ids_shuffle[:, :len_keep_T]
+        index = ids_keep.unsqueeze(-1).unsqueeze(-1).repeat(1, 1, len_keep_C, D)
+        x_masked = torch.gather(x, dim=1, index=index)
+        x_masked = x_masked.permute(0, 2, 1, 3) # N T' C' D => N C' T' D 
+        
+        x_masked = x_masked.reshape(N, len_keep_T*len_keep_C, D) # N C' T' D => N L' D
+            
+        return x_masked, None, None
+
     def forward_features(self, x):
+        """
+        x: [B=N, L, D], sequence
+        """
         B = x.shape[0]
         x = self.patch_embed(x)
 
-        cls_tokens = self.cls_token.expand(B, -1, -1)  # stole cls_tokens impl from Phil Wang, thanks
+        x = x + self.pos_embed[:, 1:, :]
+        if self.masking_blockwise:
+            x, _, _ = self.random_masking_blockwise(x, self.mask_c_ratio, self.mask_t_ratio)
+        else:
+            x, _, _ = self.random_masking(x, self.mask_ratio)
+
+        cls_token = self.cls_token + self.pos_embed[:, 0, :]
+        cls_tokens = cls_token.expand(B, -1, -1)  # stole cls_tokens impl from Phil Wang, thanks
         x = torch.cat((cls_tokens, x), dim=1)
-        x = x + self.pos_embed
+        
         x = self.pos_drop(x)
 
         for blk in self.blocks:

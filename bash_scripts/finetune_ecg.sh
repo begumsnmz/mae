@@ -8,6 +8,7 @@
 #SBATCH --gres=gpu:1  # Number of GPUs if needed
 #SBATCH --cpus-per-task=24  # Number of CPUs (Don't use more than 24 per GPU)
 #SBATCH --mem=126G  # Memory in GB (Don't use more than 126G per GPU)
+#SBATCH --nodelist=c1-head
 
 # load python module
 ml python/anaconda3
@@ -17,7 +18,7 @@ conda deactivate # If you launch your script from a terminal where your environm
 conda activate mae
 
 # Basic parameters seed = [0, 101, 202, 303, 404]
-seed=(0 101 202 303 404)
+seed=(0)
 batch_size=(32)
 accum_iter=(1)
 
@@ -39,6 +40,11 @@ patch_height="1"
 patch_width=(100)
 
 # Augmentation parameters
+masking_blockwise="True"
+mask_ratio="0.25"
+mask_c_ratio="0.10"
+mask_t_ratio="0.10"
+
 jitter_sigma="0.2"
 rescaling_sigma="0.5"
 ft_surr_phase_noise="0.075"
@@ -117,7 +123,7 @@ attention_pool=(True)
 num_workers="24"
 
 # Log specifications
-save_output="True"
+save_output="False"
 wandb="True"
 wandb_project="MAE_ECG_Fin_Tiny_Flutter_v1"
 
@@ -163,7 +169,11 @@ do
                             # resume="/home/guests/oezguen_turgut/sprai/mae_he/mae/output/fin/"$folder"/"$subfolder"/fin_b"$bs"_blr"$lr"_"$pre_data"/checkpoint-78.pth"
 
                             # cmd="python3 main_finetune.py --lower_bnd $lower_bnd --upper_bnd $upper_bnd --seed $sd --downstream_task $downstream_task --jitter_sigma $jitter_sigma --rescaling_sigma $rescaling_sigma --ft_surr_phase_noise $ft_surr_phase_noise --input_channels $input_channels --input_electrodes $input_electrodes --time_steps $time_steps --patch_height $patch_height --patch_width $patch_width --model $model --batch_size $bs --epochs $epochs --patience $patience --max_delta $max_delta --accum_iter $accum_iter --drop_path $dp --weight_decay $wd --layer_decay $ld --min_lr $min_lr --blr $lr --warmup_epoch $warmup_epochs --smoothing $smth --data_path $data_path --labels_path $labels_path --val_data_path $val_data_path --val_labels_path $val_labels_path --nb_classes $nb_classes --log_dir $log_dir --num_workers $num_workers"
-                            cmd="python3 main_finetune.py --seed $sd --downstream_task $downstream_task --jitter_sigma $jitter_sigma --rescaling_sigma $rescaling_sigma --ft_surr_phase_noise $ft_surr_phase_noise --input_channels $input_channels --input_electrodes $input_electrodes --time_steps $time_steps --patch_height $patch_height --patch_width $patch_width --model $model --batch_size $bs --epochs $epochs --patience $patience --max_delta $max_delta --accum_iter $accum_iter --drop_path $dp --weight_decay $wd --layer_decay $ld --min_lr $min_lr --blr $lr --warmup_epoch $warmup_epochs --smoothing $smth --data_path $data_path --labels_path $labels_path --val_data_path $val_data_path --val_labels_path $val_labels_path --nb_classes $nb_classes --log_dir $log_dir --num_workers $num_workers"
+                            cmd="python3 main_finetune.py --seed $sd --downstream_task $downstream_task --mask_ratio $mask_ratio --jitter_sigma $jitter_sigma --rescaling_sigma $rescaling_sigma --ft_surr_phase_noise $ft_surr_phase_noise --input_channels $input_channels --input_electrodes $input_electrodes --time_steps $time_steps --patch_height $patch_height --patch_width $patch_width --model $model --batch_size $bs --epochs $epochs --patience $patience --max_delta $max_delta --accum_iter $accum_iter --drop_path $dp --weight_decay $wd --layer_decay $ld --min_lr $min_lr --blr $lr --warmup_epoch $warmup_epochs --smoothing $smth --data_path $data_path --labels_path $labels_path --val_data_path $val_data_path --val_labels_path $val_labels_path --nb_classes $nb_classes --log_dir $log_dir --num_workers $num_workers"
+
+                            if [ "$masking_blockwise" = "True" ]; then
+                                cmd=$cmd" --masking_blockwise --mask_c_ratio $mask_c_ratio --mask_t_ratio $mask_t_ratio"
+                            fi
 
                             if [ "$from_scratch" = "False" ]; then
                                 cmd=$cmd" --finetune $finetune"
