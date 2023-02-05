@@ -17,8 +17,8 @@ conda deactivate # If you launch your script from a terminal where your environm
 conda activate mae
 
 # Basic parameters seed = [0, 101, 202, 303, 404]
-seed=(303 404)
-batch_size=(8)
+seed=(0 101 202 303 404)
+batch_size=(16)
 accum_iter=(1)
 
 epochs="400"
@@ -26,7 +26,7 @@ warmup_epochs="5"
 
 # Callback parameters
 patience="25"
-max_delta="0.5" # for AUROC
+max_delta="0.25" # for AUROC
 
 # Model parameters
 input_channels="1"
@@ -43,18 +43,18 @@ jitter_sigma="0.2"
 rescaling_sigma="0.5"
 ft_surr_phase_noise="0.075"
 
-drop_path=(0.1)
+drop_path=(0.2)
 layer_decay=(0.75)
 
 # Optimizer parameters
-blr=(3e-5) # 3e-5 if from scratch
+blr=(1e-6) # 3e-5 if from scratch
 min_lr="0.0"
-weight_decay=(0.1)
+weight_decay=(0.2)
 
 # Criterion parameters
 smoothing=(0.2)
 
-from_scratch="True"
+from_scratch="False"
 
 # Dataset parameters
 # Training balanced
@@ -148,12 +148,13 @@ do
                         for smth in "${smoothing[@]}"
                         do
 
-                            folder="ecg/CAD/Scratch"
+                            folder="ecg/CAD/MMonly"
                             subfolder=("seed$sd/"$model_size"/t2500/p"$patch_height"x"$patch_width"/ld"$ld"/dp"$dp"/smth"$smth"/wd"$weight_decay"/m0.8/atp")
 
                             pre_data="b"$pre_batch_size"_blr"$pre_blr
                             # finetune="/home/guests/oezguen_turgut/sprai/mae_he/mae/output/pre/"$folder"/"$subfolder"/pre_"$pre_data"/checkpoint-399.pth"
-                            finetune="/home/guests/oezguen_turgut/ECGMultimodalContrastiveLearning/oezguen/checkpoints/mm_v230_mae_checkpoint.pth"
+                            # finetune="/home/guests/oezguen_turgut/ECGMultimodalContrastiveLearning/oezguen/checkpoints/mm_v230_mae_checkpoint.pth"
+                            finetune="/home/guests/oezguen_turgut/ECGMultimodalContrastiveLearning/oezguen/checkpoints/mm_v283_mae_checkpoint.pth"
                             # finetune="/home/guests/oezguen_turgut/ECGMultimodalContrastiveLearning/pretrained_checkpoints/tiny/v1/checkpoint-399.pth"
 
                             output_dir="/home/guests/oezguen_turgut/sprai/mae_he/mae/output/fin/"$folder"/"$subfolder"/fin_b"$(($bs*$accum_iter))"_blr"$lr"_"$pre_data

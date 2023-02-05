@@ -25,8 +25,8 @@ epochs="400"
 warmup_epochs="5"
 
 # Callback parameters
-patience="40"
-max_delta="0.75" # for AUROC
+patience="25"
+max_delta="0.25" # for AUROC
 
 # Model parameters
 input_channels="1"
@@ -49,7 +49,7 @@ layer_decay=(0.75)
 # Optimizer parameters
 blr=(1e-6) # 3e-5 if from scratch
 min_lr="0.0"
-weight_decay=(0.2)
+weight_decay=(0.1)
 
 # Criterion parameters
 smoothing=(0.0)
@@ -148,13 +148,14 @@ do
                         for smth in "${smoothing[@]}"
                         do
 
-                            folder="ecg/Flutter/MAE"
+                            folder="ecg/Flutter/MMonly"
                             subfolder=("seed$sd/"$model_size"/t2500/p"$patch_height"x"$patch_width"/ld"$ld"/dp"$dp"/smth"$smth"/wd"$weight_decay"/m0.8/atp")
 
                             pre_data="b"$pre_batch_size"_blr"$pre_blr
                             # finetune="/home/guests/oezguen_turgut/sprai/mae_he/mae/output/pre/"$folder"/"$subfolder"/pre_"$pre_data"/checkpoint-399.pth"
                             # finetune="/home/guests/oezguen_turgut/ECGMultimodalContrastiveLearning/oezguen/checkpoints/mm_v230_mae_checkpoint.pth"
-                            finetune="/home/guests/oezguen_turgut/ECGMultimodalContrastiveLearning/pretrained_checkpoints/tiny/v1/checkpoint-399.pth"
+                            finetune="/home/guests/oezguen_turgut/ECGMultimodalContrastiveLearning/oezguen/checkpoints/mm_v283_mae_checkpoint.pth"
+                            # finetune="/home/guests/oezguen_turgut/ECGMultimodalContrastiveLearning/pretrained_checkpoints/tiny/v1/checkpoint-399.pth"
 
                             output_dir="/home/guests/oezguen_turgut/sprai/mae_he/mae/output/fin/"$folder"/"$subfolder"/fin_b"$(($bs*$accum_iter))"_blr"$lr"_"$pre_data
                             log_dir="/home/guests/oezguen_turgut/sprai/mae_he/mae/logs/fin/"$folder"/"$subfolder"/fin_b"$(($bs*$accum_iter))"_blr"$lr"_"$pre_data
