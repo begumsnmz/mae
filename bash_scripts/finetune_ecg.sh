@@ -7,8 +7,7 @@
 #SBATCH --time=7-23:59:59  # Limit on the total run time (format: days-hours:minutes:seconds)
 #SBATCH --gres=gpu:1  # Number of GPUs if needed
 #SBATCH --cpus-per-task=24  # Number of CPUs (Don't use more than 24 per GPU)
-#SBATCH --mem=126G  # Memory in GB (Don't use more than 126G per GPU)
-#SBATCH --nodelist=c1-head
+#SBATCH --mem=64G  # Memory in GB (Don't use more than 126G per GPU)
 
 # load python module
 ml python/anaconda3
@@ -18,7 +17,7 @@ conda deactivate # If you launch your script from a terminal where your environm
 conda activate mae
 
 # Basic parameters seed = [0, 101, 202, 303, 404]
-seed=(0)
+seed=(404)
 batch_size=(32)
 accum_iter=(1)
 
@@ -27,7 +26,7 @@ warmup_epochs="5"
 
 # Callback parameters
 patience="25"
-max_delta="0.25" # for AUROC
+max_delta="0.0" # for AUROC
 
 # Model parameters
 input_channels="1"
@@ -40,34 +39,34 @@ patch_height="1"
 patch_width=(100)
 
 # Augmentation parameters
-masking_blockwise="True"
-mask_ratio="0.25"
-mask_c_ratio="0.10"
-mask_t_ratio="0.10"
+masking_blockwise="False"
+mask_ratio="0.00"
+mask_c_ratio="0.1"
+mask_t_ratio="0.05"
 
 jitter_sigma="0.2"
 rescaling_sigma="0.5"
 ft_surr_phase_noise="0.075"
 
-drop_path=(0.1)
-layer_decay=(0.75)
+drop_path=(0.2)
+layer_decay=(0.5)
 
 # Optimizer parameters
 blr=(1e-6) # 3e-5 if from scratch
 min_lr="0.0"
-weight_decay=(0.1)
+weight_decay=(0.2)
 
 # Criterion parameters
-smoothing=(0.0)
+smoothing=(0.1)
 
 from_scratch="False"
 
 # Dataset parameters
 # Training balanced
-data_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/ecgs_train_flutter_all_balanced_noBase_gn.pt"
-labels_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/labelsOneHot/labels_train_flutter_all_balanced.pt"
-downstream_task="classification"
-nb_classes="2"
+# data_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/ecgs_train_flutter_all_balanced_noBase_gn.pt"
+# labels_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/labelsOneHot/labels_train_flutter_all_balanced.pt"
+# downstream_task="classification"
+# nb_classes="2"
 # data_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/ecgs_train_diabetes_all_balanced_noBase_gn.pt"
 # labels_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/labelsOneHot/labels_train_diabetes_all_balanced.pt"
 # downstream_task="classification"
@@ -88,18 +87,35 @@ nb_classes="2"
 # labels_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/labelsOneHot/labels_train_LVM_regression_div300.pt"
 # downstream_task="regression"
 # nb_classes="1"
-# data_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/ecgs_train_Regression_noBase_gn.pt"
-# labels_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/labelsOneHot/labels_train_Regression_stdNormed.pt"
-# labels_mask_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/labels_train_Regression_mask.pt"
-# downstream_task="regression"
-# nb_classes="83"
-# lower_bnd="75" #0+6+4+4+4+3+3+17+17+17
-# upper_bnd="82" #6+4+4+4+3+3+17+17+17+7
+data_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/ecgs_train_Regression_noBase_gn.pt"
+labels_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/labelsOneHot/labels_train_Regression_stdNormed.pt"
+labels_mask_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/labels_train_Regression_mask.pt"
+downstream_task="regression"
+# # LV
+# lower_bnd="0"
+# upper_bnd="6"
+# nb_classes="6"
+# # RV
+# lower_bnd="6"
+# upper_bnd="10"
+# nb_classes="4"
+# WT
+lower_bnd="24"
+upper_bnd="41"
+nb_classes="17"
+# # Ecc
+# lower_bnd="41"
+# upper_bnd="58"
+# nb_classes="17"
+# # Err
+# lower_bnd="58"
+# upper_bnd="75"
+# nb_classes="17"
 
 # Validation unbalanced
-val_data_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/ecgs_val_ecg_imaging_noBase_gn.pt"
-val_labels_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/labelsOneHot/labels_val_flutter_all.pt"
-pos_label="1"
+# val_data_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/ecgs_val_ecg_imaging_noBase_gn.pt"
+# val_labels_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/labelsOneHot/labels_val_flutter_all.pt"
+# pos_label="1"
 # val_data_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/ecgs_val_ecg_imaging_noBase_gn.pt"
 # val_labels_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/labelsOneHot/labels_val_diabetes_all.pt"
 # pos_label="1"
@@ -114,9 +130,9 @@ pos_label="1"
 # pos_label="1"
 # val_data_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/ecgs_val_ecg_imaging_noBase_gn.pt"
 # val_labels_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/labelsOneHot/labels_val_LVM_regression_div300.pt"
-# val_data_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/ecgs_val_Regression_noBase_gn.pt"
-# val_labels_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/labelsOneHot/labels_val_Regression_stdNormed.pt"
-# val_labels_mask_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/labels_val_Regression_mask.pt"
+val_data_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/ecgs_val_Regression_noBase_gn.pt"
+val_labels_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/labelsOneHot/labels_val_Regression_stdNormed.pt"
+val_labels_mask_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/labels_val_Regression_mask.pt"
 
 global_pool=(True)
 attention_pool=(True)
@@ -125,7 +141,7 @@ num_workers="24"
 # Log specifications
 save_output="False"
 wandb="True"
-wandb_project="MAE_ECG_Fin_Tiny_Flutter_v1"
+wandb_project="MAE_ECG_Fin_Tiny_WT"
 
 # Pretraining specifications
 pre_batch_size=(128)
@@ -154,13 +170,13 @@ do
                         for smth in "${smoothing[@]}"
                         do
 
-                            folder="ecg/Flutter/MMonly"
+                            folder="ecg/Regression/MM"
                             subfolder=("seed$sd/"$model_size"/t2500/p"$patch_height"x"$patch_width"/ld"$ld"/dp"$dp"/smth"$smth"/wd"$weight_decay"/m0.8/atp")
 
                             pre_data="b"$pre_batch_size"_blr"$pre_blr
                             # finetune="/home/guests/oezguen_turgut/sprai/mae_he/mae/output/pre/"$folder"/"$subfolder"/pre_"$pre_data"/checkpoint-399.pth"
-                            # finetune="/home/guests/oezguen_turgut/ECGMultimodalContrastiveLearning/oezguen/checkpoints/mm_v230_mae_checkpoint.pth"
-                            finetune="/home/guests/oezguen_turgut/ECGMultimodalContrastiveLearning/oezguen/checkpoints/mm_v283_mae_checkpoint.pth"
+                            finetune="/home/guests/oezguen_turgut/ECGMultimodalContrastiveLearning/oezguen/checkpoints/mm_v230_mae_checkpoint.pth"
+                            # finetune="/home/guests/oezguen_turgut/ECGMultimodalContrastiveLearning/oezguen/checkpoints/mm_v283_mae_checkpoint.pth"
                             # finetune="/home/guests/oezguen_turgut/ECGMultimodalContrastiveLearning/pretrained_checkpoints/tiny/v1/checkpoint-399.pth"
 
                             output_dir="/home/guests/oezguen_turgut/sprai/mae_he/mae/output/fin/"$folder"/"$subfolder"/fin_b"$(($bs*$accum_iter))"_blr"$lr"_"$pre_data
@@ -168,8 +184,8 @@ do
 
                             # resume="/home/guests/oezguen_turgut/sprai/mae_he/mae/output/fin/"$folder"/"$subfolder"/fin_b"$bs"_blr"$lr"_"$pre_data"/checkpoint-78.pth"
 
-                            # cmd="python3 main_finetune.py --lower_bnd $lower_bnd --upper_bnd $upper_bnd --seed $sd --downstream_task $downstream_task --jitter_sigma $jitter_sigma --rescaling_sigma $rescaling_sigma --ft_surr_phase_noise $ft_surr_phase_noise --input_channels $input_channels --input_electrodes $input_electrodes --time_steps $time_steps --patch_height $patch_height --patch_width $patch_width --model $model --batch_size $bs --epochs $epochs --patience $patience --max_delta $max_delta --accum_iter $accum_iter --drop_path $dp --weight_decay $wd --layer_decay $ld --min_lr $min_lr --blr $lr --warmup_epoch $warmup_epochs --smoothing $smth --data_path $data_path --labels_path $labels_path --val_data_path $val_data_path --val_labels_path $val_labels_path --nb_classes $nb_classes --log_dir $log_dir --num_workers $num_workers"
-                            cmd="python3 main_finetune.py --seed $sd --downstream_task $downstream_task --mask_ratio $mask_ratio --jitter_sigma $jitter_sigma --rescaling_sigma $rescaling_sigma --ft_surr_phase_noise $ft_surr_phase_noise --input_channels $input_channels --input_electrodes $input_electrodes --time_steps $time_steps --patch_height $patch_height --patch_width $patch_width --model $model --batch_size $bs --epochs $epochs --patience $patience --max_delta $max_delta --accum_iter $accum_iter --drop_path $dp --weight_decay $wd --layer_decay $ld --min_lr $min_lr --blr $lr --warmup_epoch $warmup_epochs --smoothing $smth --data_path $data_path --labels_path $labels_path --val_data_path $val_data_path --val_labels_path $val_labels_path --nb_classes $nb_classes --log_dir $log_dir --num_workers $num_workers"
+                            cmd="python3 main_finetune.py --lower_bnd $lower_bnd --upper_bnd $upper_bnd --seed $sd --downstream_task $downstream_task --mask_ratio $mask_ratio --jitter_sigma $jitter_sigma --rescaling_sigma $rescaling_sigma --ft_surr_phase_noise $ft_surr_phase_noise --input_channels $input_channels --input_electrodes $input_electrodes --time_steps $time_steps --patch_height $patch_height --patch_width $patch_width --model $model --batch_size $bs --epochs $epochs --patience $patience --max_delta $max_delta --accum_iter $accum_iter --drop_path $dp --weight_decay $wd --layer_decay $ld --min_lr $min_lr --blr $lr --warmup_epoch $warmup_epochs --smoothing $smth --data_path $data_path --labels_path $labels_path --val_data_path $val_data_path --val_labels_path $val_labels_path --nb_classes $nb_classes --log_dir $log_dir --num_workers $num_workers"
+                            # cmd="python3 main_finetune.py --seed $sd --downstream_task $downstream_task --mask_ratio $mask_ratio --jitter_sigma $jitter_sigma --rescaling_sigma $rescaling_sigma --ft_surr_phase_noise $ft_surr_phase_noise --input_channels $input_channels --input_electrodes $input_electrodes --time_steps $time_steps --patch_height $patch_height --patch_width $patch_width --model $model --batch_size $bs --epochs $epochs --patience $patience --max_delta $max_delta --accum_iter $accum_iter --drop_path $dp --weight_decay $wd --layer_decay $ld --min_lr $min_lr --blr $lr --warmup_epoch $warmup_epochs --smoothing $smth --data_path $data_path --labels_path $labels_path --val_data_path $val_data_path --val_labels_path $val_labels_path --nb_classes $nb_classes --log_dir $log_dir --num_workers $num_workers"
 
                             if [ "$masking_blockwise" = "True" ]; then
                                 cmd=$cmd" --masking_blockwise --mask_c_ratio $mask_c_ratio --mask_t_ratio $mask_t_ratio"

@@ -48,10 +48,10 @@ from torch.utils.data import Subset, ConcatDataset
 def get_args_parser():
     parser = argparse.ArgumentParser('MAE fine-tuning for image classification', add_help=False)
     # Basic parameters
-    # parser.add_argument('--lower_bnd', type=int, default=0, metavar='N',
-    #                     help='lower_bnd')
-    # parser.add_argument('--upper_bnd', type=int, default=0, metavar='N',
-    #                     help='upper_bnd')
+    parser.add_argument('--lower_bnd', type=int, default=0, metavar='N',
+                        help='lower_bnd')
+    parser.add_argument('--upper_bnd', type=int, default=0, metavar='N',
+                        help='upper_bnd')
 
     parser.add_argument('--batch_size', default=64, type=int,
                         help='Batch size per GPU (effective batch size is batch_size * accum_iter * # gpus')

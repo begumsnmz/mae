@@ -7,7 +7,7 @@
 #SBATCH --time=7-23:59:59  # Limit on the total run time (format: days-hours:minutes:seconds)
 #SBATCH --gres=gpu:1  # Number of GPUs if needed
 #SBATCH --cpus-per-task=24  # Number of CPUs (Don't use more than 24 per GPU)
-#SBATCH --mem=126G  # Memory in GB (Don't use more than 126G per GPU)
+#SBATCH --mem=64G  # Memory in GB (Don't use more than 126G per GPU)
 
 # load python module
 ml python/anaconda3
