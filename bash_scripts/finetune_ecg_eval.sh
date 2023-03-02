@@ -5,9 +5,9 @@
 #SBATCH --output=/home/guests/oezguen_turgut/sprai/slurm_output/fin/ecg/mae_fin-%A.out  # Standard output of the script (Can be absolute or relative path). %A adds the job id to the file name so you can launch the same script multiple times and get different logging files
 #SBATCH --error=/home/guests/oezguen_turgut/sprai/slurm_output/fin/ecg/mae_fin-%A.err  # Standard error of the script
 #SBATCH --time=7-23:59:59  # Limit on the total run time (format: days-hours:minutes:seconds)
-#SBATCH --gres=gpu:1  # Number of GPUs if needed
-#SBATCH --cpus-per-task=24  # Number of CPUs (Don't use more than 24 per GPU)
-#SBATCH --mem=64G  # Memory in GB (Don't use more than 126G per GPU)
+#SBATCH --gres=gpu:0  # Number of GPUs if needed
+#SBATCH --cpus-per-task=12  # Number of CPUs (Don't use more than 24 per GPU)
+#SBATCH --mem=48G  # Memory in GB (Don't use more than 126G per GPU)
 
 # load python module
 ml python/anaconda3
@@ -18,7 +18,7 @@ conda activate mae
 
 # Basic parameters seed = [0, 101, 202, 303, 404]
 seed="404"
-batch_size=(32)
+batch_size=(8)
 accum_iter=(1)
 
 epochs="400"
@@ -49,10 +49,10 @@ rescaling_sigma="0.5"
 ft_surr_phase_noise="0.075"
 
 drop_path=(0.2)
-layer_decay="0.5"
+layer_decay="0.75"
 
 # Optimizer parameters
-blr=(1e-6)
+blr=(3e-6)
 min_lr="0.0"
 weight_decay=(0.2)
 
@@ -137,6 +137,7 @@ nb_classes="17"
 # pos_label="1"
 # val_data_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/ecgs_val_ecg_imaging_noBase_gn.pt"
 # val_labels_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/labelsOneHot/labels_val_LVM_regression_div300.pt"
+
 # val_data_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/ecgs_val_Regression_noBase_gn.pt"
 # val_labels_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/labelsOneHot/labels_val_Regression_stdNormed.pt"
 # val_labels_mask_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/labels_val_Regression_mask.pt"
@@ -158,7 +159,7 @@ wandb_project="MAE_ECG_Fin_Tiny_WT"
 pre_batch_size=(128)
 pre_blr=(1e-5)
 
-folder="ecg/Regression/MM"
+folder="ecg/Regression/MMonly/WT"
 subfolder=("seed$seed/"$model_size"/t2500/p"$patch_height"x"$patch_width"/ld"$layer_decay"/dp"$drop_path"/smth"$smoothing"/wd"$weight_decay"/m0.8/atp")
 
 pre_data="b"$pre_batch_size"_blr"$pre_blr
@@ -167,7 +168,7 @@ log_dir="/home/guests/oezguen_turgut/sprai/mae_he/mae/logs/fin/"$folder"/"$subfo
 # As filename: State the checkpoint for the inference of a specific model
 # or state the (final) epoch for the inference of all models up to this epoch
 resume="/home/guests/oezguen_turgut/sprai/mae_he/mae/output/fin/"$folder"/"$subfolder"/fin_b"$(($batch_size*$accum_iter))"_blr"$blr"_"$pre_data"/checkpoint-63.pth"
-cmd="python3 main_finetune.py --eval --resume $resume --lower_bnd $lower_bnd --upper_bnd $upper_bnd --seed $seed --downstream_task $downstream_task --mask_ratio $mask_ratio --jitter_sigma $jitter_sigma --rescaling_sigma $rescaling_sigma --ft_surr_phase_noise $ft_surr_phase_noise --input_channels $input_channels --input_electrodes $input_electrodes --time_steps $time_steps --patch_height $patch_height --patch_width $patch_width --model $model --batch_size $batch_size --epochs $epochs --patience $patience --max_delta $max_delta --accum_iter $accum_iter --drop_path $drop_path --weight_decay $weight_decay --layer_decay $layer_decay --min_lr $min_lr --blr $blr --warmup_epoch $warmup_epochs --smoothing $smoothing --data_path $data_path --labels_path $labels_path --val_data_path $val_data_path --val_labels_path $val_labels_path --nb_classes $nb_classes --log_dir $log_dir --num_workers $num_workers"
+cmd="python3 main_finetune.py --device cpu --eval --resume $resume --lower_bnd $lower_bnd --upper_bnd $upper_bnd --seed $seed --downstream_task $downstream_task --mask_ratio $mask_ratio --jitter_sigma $jitter_sigma --rescaling_sigma $rescaling_sigma --ft_surr_phase_noise $ft_surr_phase_noise --input_channels $input_channels --input_electrodes $input_electrodes --time_steps $time_steps --patch_height $patch_height --patch_width $patch_width --model $model --batch_size $batch_size --epochs $epochs --patience $patience --max_delta $max_delta --accum_iter $accum_iter --drop_path $drop_path --weight_decay $weight_decay --layer_decay $layer_decay --min_lr $min_lr --blr $blr --warmup_epoch $warmup_epochs --smoothing $smoothing --data_path $data_path --labels_path $labels_path --val_data_path $val_data_path --val_labels_path $val_labels_path --nb_classes $nb_classes --log_dir $log_dir --num_workers $num_workers"
 
 if [ "$masking_blockwise" = "True" ]; then
     cmd=$cmd" --masking_blockwise --mask_c_ratio $mask_c_ratio --mask_t_ratio $mask_t_ratio"

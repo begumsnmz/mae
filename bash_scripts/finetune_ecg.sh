@@ -17,8 +17,8 @@ conda deactivate # If you launch your script from a terminal where your environm
 conda activate mae
 
 # Basic parameters seed = [0, 101, 202, 303, 404]
-seed=(404)
-batch_size=(32)
+seed=(0 101 202 303 404)
+batch_size=(16)
 accum_iter=(1)
 
 epochs="400"
@@ -49,10 +49,10 @@ rescaling_sigma="0.5"
 ft_surr_phase_noise="0.075"
 
 drop_path=(0.2)
-layer_decay=(0.5)
+layer_decay=(0.75)
 
 # Optimizer parameters
-blr=(1e-6) # 3e-5 if from scratch
+blr=(3e-6) # 3e-5 if from scratch
 min_lr="0.0"
 weight_decay=(0.2)
 
@@ -99,18 +99,18 @@ downstream_task="regression"
 # lower_bnd="6"
 # upper_bnd="10"
 # nb_classes="4"
-# WT
-lower_bnd="24"
-upper_bnd="41"
-nb_classes="17"
+# # WT
+# lower_bnd="24"
+# upper_bnd="41"
+# nb_classes="17"
 # # Ecc
 # lower_bnd="41"
 # upper_bnd="58"
 # nb_classes="17"
-# # Err
-# lower_bnd="58"
-# upper_bnd="75"
-# nb_classes="17"
+# Err
+lower_bnd="58"
+upper_bnd="75"
+nb_classes="17"
 
 # Validation unbalanced
 # val_data_path="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects/ecg/ecgs_val_ecg_imaging_noBase_gn.pt"
@@ -139,9 +139,9 @@ attention_pool=(True)
 num_workers="24"
 
 # Log specifications
-save_output="False"
+save_output="True"
 wandb="True"
-wandb_project="MAE_ECG_Fin_Tiny_WT"
+wandb_project="MAE_ECG_Fin_Tiny_Err"
 
 # Pretraining specifications
 pre_batch_size=(128)
@@ -170,13 +170,13 @@ do
                         for smth in "${smoothing[@]}"
                         do
 
-                            folder="ecg/Regression/MM"
+                            folder="ecg/Regression/MMonly/Err"
                             subfolder=("seed$sd/"$model_size"/t2500/p"$patch_height"x"$patch_width"/ld"$ld"/dp"$dp"/smth"$smth"/wd"$weight_decay"/m0.8/atp")
 
                             pre_data="b"$pre_batch_size"_blr"$pre_blr
                             # finetune="/home/guests/oezguen_turgut/sprai/mae_he/mae/output/pre/"$folder"/"$subfolder"/pre_"$pre_data"/checkpoint-399.pth"
-                            finetune="/home/guests/oezguen_turgut/ECGMultimodalContrastiveLearning/oezguen/checkpoints/mm_v230_mae_checkpoint.pth"
-                            # finetune="/home/guests/oezguen_turgut/ECGMultimodalContrastiveLearning/oezguen/checkpoints/mm_v283_mae_checkpoint.pth"
+                            # finetune="/home/guests/oezguen_turgut/ECGMultimodalContrastiveLearning/oezguen/checkpoints/mm_v230_mae_checkpoint.pth"
+                            finetune="/home/guests/oezguen_turgut/ECGMultimodalContrastiveLearning/oezguen/checkpoints/mm_v283_mae_checkpoint.pth"
                             # finetune="/home/guests/oezguen_turgut/ECGMultimodalContrastiveLearning/pretrained_checkpoints/tiny/v1/checkpoint-399.pth"
 
                             output_dir="/home/guests/oezguen_turgut/sprai/mae_he/mae/output/fin/"$folder"/"$subfolder"/fin_b"$(($bs*$accum_iter))"_blr"$lr"_"$pre_data
