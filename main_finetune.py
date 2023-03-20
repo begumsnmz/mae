@@ -472,6 +472,7 @@ def main(args):
     start_time = time.time()
     max_accuracy, max_f1, max_auroc, max_auprc = 0.0, 0.0, 0.0, 0.0
     min_rmse = np.inf
+    max_pcc = 0.0
     for epoch in range(args.start_epoch, args.epochs):
         # if epoch == 2:
         #     for _, p in model.named_parameters():
@@ -511,7 +512,8 @@ def main(args):
             print(f"Root Mean Squared Error (RMSE) / Pearson Correlation Coefficient (PCC) of the network on the {len(dataset_val)} test images:\
                  {test_stats['rmse']:.4f} / {test_stats['pcc']:.2f}")
             min_rmse = min(min_rmse, test_stats['rmse'])
-            print(f'Min Root Mean Squared Error (RMSE): {min_rmse:.4f}\n')
+            max_pcc = max(max_pcc, test_stats['pcc'])
+            print(f'Min Root Mean Squared Error (RMSE) / Max Pearson Correlation Coefficient: {min_rmse:.4f} / {max_pcc:.4f}\n')
 
         log_stats = {**{f'train_{k}': v for k, v in train_stats.items()},
                         **{f'test_{k}': v for k, v in test_stats.items()},
