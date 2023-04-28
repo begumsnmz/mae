@@ -36,6 +36,7 @@ import timm.optim.optim_factory as optim_factory
 
 import util.misc as misc
 from util.misc import NativeScalerWithGradNormCount as NativeScaler
+from util.callbacks import EarlyStop
 
 import models_mae
 
@@ -102,6 +103,12 @@ def get_args_parser():
 
     parser.add_argument('--warmup_epochs', type=int, default=40, metavar='N',
                         help='epochs to warmup LR')
+
+    # Callback parameters
+    parser.add_argument('--patience', default=-1, type=float,
+                        help='Early stopping whether val is worse than train for specified nb of epochs (default: -1, i.e. no early stopping)')
+    parser.add_argument('--max_delta', default=0, type=float,
+                        help='Early stopping threshold (val has to be worse than (train+delta)) (default: 0)')
 
     # Dataset parameters
     parser.add_argument('--data_path', default='_.pt', type=str,
@@ -244,25 +251,48 @@ def main(args):
 
     misc.load_model(args=args, model_without_ddp=model_without_ddp, optimizer=optimizer, loss_scaler=loss_scaler)
 
+    # Define callbacks
+    early_stop = EarlyStop(patience=args.patience, max_delta=args.max_delta)
+
     print(f"Start training for {args.epochs} epochs")
     start_time = time.time()
+    eval_criterion = "ncc"
+    best_stats = {'loss':np.inf, 'ncc':0.0}
     for epoch in range(args.start_epoch, args.epochs):
         if True: #args.distributed:
             data_loader_train.sampler.set_epoch(epoch)
-        train_stats, training_history = train_one_epoch(
+        train_stats, train_history = train_one_epoch(
             model, data_loader_train,
             optimizer, device, epoch, loss_scaler,
             log_writer=log_writer,
             args=args
         )
-        if args.output_dir and (epoch % 100 == 0 or epoch + 1 == args.epochs):
-            misc.save_model(
-                args=args, model=model, model_without_ddp=model_without_ddp, optimizer=optimizer,
-                loss_scaler=loss_scaler, epoch=epoch)
+        # if args.output_dir and (epoch % 100 == 0 or epoch + 1 == args.epochs):
+        #     misc.save_model(
+        #         args=args, model=model, model_without_ddp=model_without_ddp, optimizer=optimizer,
+        #         loss_scaler=loss_scaler, epoch=epoch)
 
-        val_stats = evaluate(data_loader_val, model, device, epoch, log_writer=log_writer, training_history=training_history, args=args)
+        val_stats, test_history = evaluate(data_loader_val, model, device, epoch, log_writer=log_writer, args=args)
         print(f"Loss / Normalized CC of the network on the {len(dataset_val)} val images: {val_stats['loss']:.4f} / {val_stats['ncc']:.2f}")
 
+        if eval_criterion == "loss":
+            if early_stop.evaluate_decreasing_metric(val_metric=val_stats[eval_criterion]):
+                break
+            if args.output_dir and val_stats[eval_criterion] <= best_stats[eval_criterion]:
+                misc.save_best_model(
+                    args=args, model=model, model_without_ddp=model_without_ddp, optimizer=optimizer,
+                    loss_scaler=loss_scaler, epoch=epoch, test_stats=val_stats, evaluation_criterion=eval_criterion)
+        else:
+            if early_stop.evaluate_increasing_metric(val_metric=val_stats[eval_criterion]):
+                break
+            if args.output_dir and val_stats[eval_criterion] >= best_stats[eval_criterion]:
+                misc.save_best_model(
+                    args=args, model=model, model_without_ddp=model_without_ddp, optimizer=optimizer,
+                    loss_scaler=loss_scaler, epoch=epoch, test_stats=val_stats, evaluation_criterion=eval_criterion)
+
+        best_stats['loss'] = min(best_stats['loss'], val_stats['loss'])
+        best_stats['ncc'] = max(best_stats['ncc'], val_stats['ncc'])
+            
         log_stats = {**{f'train_{k}': v for k, v in train_stats.items()},
                         'epoch': epoch,}
 
@@ -271,6 +301,9 @@ def main(args):
                 log_writer.flush()
             with open(os.path.join(args.output_dir, "log.txt"), mode="a", encoding="utf-8") as f:
                 f.write(json.dumps(log_stats) + "\n")
+
+        if args.wandb:
+            wandb.log(train_history | test_history)
 
     total_time = time.time() - start_time
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))

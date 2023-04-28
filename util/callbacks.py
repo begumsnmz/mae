@@ -6,26 +6,32 @@ class EarlyStop():
         self.patience = patience
         self.max_delta = max_delta
         self.counter = 0
-        self.min_val_loss = np.inf
+        self.min_val_metric = np.inf
         self.max_val_metric = 0
 
-    def evaluate_loss(self, val_loss):
+    def evaluate_decreasing_metric(self, val_metric):
+        """
+            e.g. loss or rmse
+        """
         if self.patience == -1:
             return False
         
-        if val_loss <= self.min_val_loss:
-            self.min_val_loss = val_loss
+        if val_metric <= self.min_val_metric:
+            self.min_val_metric = val_metric
             self.counter = 0
-        elif val_loss <= (self.min_val_loss + self.max_delta):
+        elif val_metric <= (self.min_val_metric + self.max_delta):
             self.counter = 0
-        elif val_loss > (self.min_val_loss + self.max_delta):
+        elif val_metric > (self.min_val_metric + self.max_delta):
             self.counter += 1
             if self.counter > self.patience:
                 return True
         
         return False
-    
-    def evaluate_metric(self, val_metric):
+
+    def evaluate_increasing_metric(self, val_metric):
+        """
+            e.g. accuracy or auroc
+        """
         if self.patience == -1:
             return False
         

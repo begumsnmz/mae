@@ -161,9 +161,13 @@ def train_one_epoch(model: torch.nn.Module,
 
 
 @torch.no_grad()
-def evaluate(data_loader, model, device, epoch, log_writer=None, training_history=None, args=None):
+def evaluate(data_loader, model, device, epoch, log_writer=None, args=None):
     metric_logger = misc.MetricLogger(delimiter="  ")
     header = 'Test:'
+
+    if log_writer is not None:
+        print('log_dir: {}'.format(log_writer.log_dir))
+        test_history = {}  
 
     # switch to evaluation mode
     model.eval()
@@ -196,9 +200,9 @@ def evaluate(data_loader, model, device, epoch, log_writer=None, training_histor
         log_writer.add_scalar('val/val_normalized_corr_coef', test_stats["ncc"], epoch)
 
         if args.wandb == True:
-            training_history['epoch'] = epoch
-            training_history['val_loss'] = test_stats["loss"]
-            training_history['Val Normalized Correlation Coefficient'] = test_stats["ncc"]
+            test_history['epoch'] = epoch
+            test_history['val_loss'] = test_stats["loss"]
+            test_history['Val Normalized Correlation Coefficient'] = test_stats["ncc"]
 
             # if (epoch % 1) == 0:
             #     steps = 5
@@ -228,6 +232,6 @@ def evaluate(data_loader, model, device, epoch, log_writer=None, training_histor
             #     plt.tight_layout()
             #     training_history["Val reconstruction"] = wandb.Image(plt)
 
-            wandb.log(training_history)
+            # wandb.log(test_history)
 
-    return test_stats
+    return test_stats, test_history

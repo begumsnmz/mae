@@ -43,8 +43,11 @@ class SignalDataset(Dataset):
     def __getitem__(self, idx) -> Tuple[Any, Any]:
         """return a sample from the dataset at index idx"""
 
-        data, label, label_mask = self.data[idx], self.labels[idx][..., self.args.lower_bnd:self.args.upper_bnd], self.labels_mask[idx][..., self.args.lower_bnd:self.args.upper_bnd]
-        # data, label, label_mask = self.data[idx], self.labels[idx], self.labels_mask[idx]
+        if self.downstream_task == 'regression':
+            data, label, label_mask = self.data[idx], self.labels[idx][..., self.args.lower_bnd:self.args.upper_bnd], self.labels_mask[idx][..., self.args.lower_bnd:self.args.upper_bnd]
+        else:
+            data, label, label_mask = self.data[idx], self.labels[idx], self.labels_mask[idx]
+        
         if self.args.input_size[0] == 1:
             data = data.unsqueeze(dim=0)
 

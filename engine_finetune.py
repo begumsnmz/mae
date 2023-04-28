@@ -201,9 +201,9 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
                     training_history[f'Train/RMSE/{i}'] = torch.tensor(rmse[i]).item()
                     training_history[f'Train/PCC/{i}'] = pcc[i].item()
 
-            wandb.log(training_history)
+            # wandb.log(training_history)
 
-    return training_stats
+    return training_stats, training_history
 
 
 @torch.no_grad()
@@ -228,6 +228,7 @@ def evaluate(data_loader, model, device, epoch, log_writer=None, args=None):
     metric_auroc = torchmetrics.AUROC(num_classes=args.nb_classes, pos_label=args.pos_label, average='macro').to(device=device)
     preds = []
     trgts = []
+    # tp, fp, tn, fn = 0, 0, 0, 0
 
     # regression metrics
     metric_rmse = MeanSquaredError(squared=False) #.to(device=device)
@@ -265,6 +266,17 @@ def evaluate(data_loader, model, device, epoch, log_writer=None, args=None):
             # store the results of each step in a list to calculate the auc globally of the entire epoch
             [preds.append(elem.item()) for elem in torch.nn.functional.softmax(output, dim=-1)[:, args.pos_label]]
             [trgts.append(elem.item()) for elem in target]
+
+            # my_target = target
+            # my_predic = torch.argmax(output, dim=1)
+
+            # # if pos_label=1
+            # tp += (my_target * my_predic).sum()
+            # fp += ((1-my_target) * my_predic).sum()
+            # tn += ((1-my_target) * (1-my_predic)).sum()
+            # fn += (my_target * (1-my_predic)).sum()
+
+            # # print(f"TP: {tp}, FP: {fp}, TN: {tn}, FN: {fn}\n")
 
             batch_size = images.shape[0]
             # metric_logger.meters['acc1'].update(acc1.item(), n=batch_size)
@@ -355,6 +367,6 @@ def evaluate(data_loader, model, device, epoch, log_writer=None, args=None):
                     test_history[f'Test/RMSE/{i}'] = torch.tensor(rmse[i]).item()
                     test_history[f'Test/PCC/{i}'] = pcc[i].item()
 
-            wandb.log(test_history)
+            # wandb.log(test_history)
     
-    return test_stats
+    return test_stats, test_history

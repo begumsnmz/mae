@@ -37,7 +37,6 @@ import util.misc as misc
 from util.pos_embed import interpolate_pos_embed
 from util.misc import NativeScalerWithGradNormCount as NativeScaler
 from util.lars import LARS
-from util.crop import RandomResizedCrop
 from util.callbacks import EarlyStop
 
 import models_vit
@@ -50,6 +49,11 @@ from util.dataset import SignalDataset
 def get_args_parser():
     parser = argparse.ArgumentParser('MAE linear probing for image classification', add_help=False)
     # Basic parameters
+    parser.add_argument('--lower_bnd', type=int, default=0, metavar='N',
+                        help='lower_bnd')
+    parser.add_argument('--upper_bnd', type=int, default=0, metavar='N',
+                        help='upper_bnd')
+    
     parser.add_argument('--batch_size', default=512, type=int,
                         help='Batch size per GPU (effective batch size is batch_size * accum_iter * # gpus')
     parser.add_argument('--epochs', default=90, type=int)
@@ -77,6 +81,15 @@ def get_args_parser():
                         help='patch size')
                         
     # Augmentation parameters
+    parser.add_argument('--masking_blockwise', action='store_true', default=False,
+                        help='Masking blockwise in channel and time dimension (instead of random masking)')
+    parser.add_argument('--mask_ratio', default=0.0, type=float,
+                        help='Masking ratio (percentage of removed patches)')
+    parser.add_argument('--mask_c_ratio', default=0.0, type=float,
+                        help='Masking ratio in channel dimension (percentage of removed patches)')
+    parser.add_argument('--mask_t_ratio', default=0.0, type=float,
+                        help='Masking ratio in time dimension (percentage of removed patches)')
+    
     parser.add_argument('--jitter_sigma', default=0.2, type=float,
                         help='Jitter sigma N(0, sigma) (default: 0.2)')
     parser.add_argument('--rescaling_sigma', default=0.5, type=float,
@@ -297,6 +310,10 @@ def main(args):
         num_classes=args.nb_classes,
         global_pool=args.global_pool,
         downstream_task=args.downstream_task,
+        masking_blockwise=args.masking_blockwise,
+        mask_ratio=args.mask_ratio,
+        mask_c_ratio=args.mask_c_ratio,
+        mask_t_ratio=args.mask_t_ratio
     )
     model.blocks[-1].attn.forward = attention_forward_wrapper(model.blocks[-1].attn) # required to read out the attention map of the last layer
 
@@ -333,6 +350,7 @@ def main(args):
     # hack: revise model's head with BN
     model.head = torch.nn.Sequential(torch.nn.BatchNorm1d(model.head.in_features, affine=False, eps=1e-6), model.head)
     # freeze all but the head
+    # INTERESTING NOTE: when removing the following 4 lines, performance is superior to finetuning (no idea why though)
     for _, p in model.named_parameters():
         p.requires_grad = False
     for _, p in model.head.named_parameters():
@@ -361,6 +379,7 @@ def main(args):
         model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu])
         model_without_ddp = model.module
 
+    # build optimizer with layer-wise lr decay (lrd)
     param_groups = lrd.param_groups_lrd(model_without_ddp, args.weight_decay,
         no_weight_decay_list=model_without_ddp.no_weight_decay(),
         layer_decay=args.layer_decay
@@ -374,7 +393,7 @@ def main(args):
     if args.downstream_task == 'regression':
         criterion = torch.nn.MSELoss()
     elif args.smoothing > 0.:
-        criterion = torch.nn.CrossEntropyLoss(weight=class_weights, label_smoothing=args.smoothing)
+        criterion = torch.nn.CrossEntropyLoss(weight=class_weights, label_smoothing=args.smoothing) #timm.loss's LabelSmoothingCrossEntropy(smoothing=args.smoothing)
     else:
         criterion = torch.nn.CrossEntropyLoss(weight=class_weights)
 
@@ -396,56 +415,70 @@ def main(args):
 
             misc.load_model(args=args, model_without_ddp=model_without_ddp, optimizer=optimizer, loss_scaler=loss_scaler)
 
-            test_stats = evaluate(data_loader_val, model, device, epoch, log_writer=log_writer, args=args)
+            test_stats, test_history = evaluate(data_loader_val, model, device, epoch, log_writer=log_writer, args=args)
             if args.downstream_task == 'classification':
-                print(f"Accuracy / F1 / AUROC / AUPRC of the network on the {len(dataset_val)} test images: {test_stats['acc']:.1f}% / {test_stats['f1']:.1f}% / {test_stats['auroc']:.1f}% / {test_stats['auprc']:.1f}%")
+                print(f"Accuracy / F1 / AUROC / AUPRC of the network on the {len(dataset_val)} test images: {test_stats['acc']:.2f}% / {test_stats['f1']:.2f}% / {test_stats['auroc']:.2f}% / {test_stats['auprc']:.2f}%")
             elif args.downstream_task == 'regression':
                 print(f"Root Mean Squared Error (RMSE) / Pearson Correlation Coefficient (PCC) of the network on the {len(dataset_val)} test images:\
-                     {test_stats['rmse']:.4f} / {test_stats['pcc']:.2f}")
+                     {test_stats['rmse']:.4f} / {test_stats['pcc']:.4f}")
 
+            if args.wandb:
+                wandb.log(test_history)
+            
         exit(0)
 
-    print(f"Start training for {args.epochs} epochs")
     # Define callbacks
     early_stop = EarlyStop(patience=args.patience, max_delta=args.max_delta)
     
+    print(f"Start training for {args.epochs} epochs")
     start_time = time.time()
-    max_accuracy, max_f1, max_auroc, max_auprc = 0.0, 0.0, 0.0, 0.0
-    min_rmse = np.inf
+    best_stats = {'loss':np.inf, 'acc':0.0, 'f1':0.0, 'auroc':0.0, 'auprc':0.0, 'rmse':np.inf, 'pcc':0.0}
     for epoch in range(args.start_epoch, args.epochs):
         if True: #args.distributed:
             data_loader_train.sampler.set_epoch(epoch)
-        train_stats = train_one_epoch(
+        train_stats, train_history = train_one_epoch(
             model, criterion, data_loader_train,
             optimizer, device, epoch, loss_scaler,
             max_norm=None,
             log_writer=log_writer,
             args=args
         )
-        if args.output_dir:
-            misc.save_model(
-                args=args, model=model, model_without_ddp=model_without_ddp, optimizer=optimizer,
-                loss_scaler=loss_scaler, epoch=epoch)
 
-        test_stats = evaluate(data_loader_val, model, device, epoch, log_writer=log_writer, args=args)
-        if args.downstream_task == 'classification' and early_stop.evaluate_metric(val_metric=test_stats["auroc"]):
-            break
-        # elif args.downstream_task == 'regression' and early_stop.evaluate_loss(val_loss=test_stats["loss"]):
-        elif args.downstream_task == 'regression' and early_stop.evaluate_metric(val_metric=test_stats["pcc"]):
-            break
+        test_stats, test_history = evaluate(data_loader_val, model, device, epoch, log_writer=log_writer, args=args)
+        if args.downstream_task == 'classification':
+            eval_criterion = "auroc"
+        elif args.downstream_task == 'regression':
+            eval_criterion = "pcc"
+
+        if eval_criterion == "loss" or eval_criterion == "rmse":
+            if early_stop.evaluate_decreasing_metric(val_metric=test_stats[eval_criterion]):
+                break
+            if args.output_dir and test_stats[eval_criterion] <= best_stats[eval_criterion]:
+                misc.save_best_model(
+                    args=args, model=model, model_without_ddp=model_without_ddp, optimizer=optimizer,
+                    loss_scaler=loss_scaler, epoch=epoch, test_stats=test_stats, evaluation_criterion=eval_criterion)
+        else:
+            if early_stop.evaluate_increasing_metric(val_metric=test_stats[eval_criterion]):
+                break
+            if args.output_dir and test_stats[eval_criterion] >= best_stats[eval_criterion]:
+                misc.save_best_model(
+                    args=args, model=model, model_without_ddp=model_without_ddp, optimizer=optimizer,
+                    loss_scaler=loss_scaler, epoch=epoch, test_stats=test_stats, evaluation_criterion=eval_criterion)
         
+        best_stats['loss'] = min(best_stats['loss'], test_stats['loss'])
         if args.downstream_task == 'classification':
             print(f"Accuracy / F1 / AUROC / AUPRC of the network on the {len(dataset_val)} test images: {test_stats['acc']:.1f}% / {test_stats['f1']:.1f}% / {test_stats['auroc']:.1f}% / {test_stats['auprc']:.1f}%")
-            max_accuracy = max(max_accuracy, test_stats["acc"])
-            max_f1 = max(max_f1, test_stats['f1'])
-            max_auroc = max(max_auroc, test_stats['auroc'])
-            max_auprc = max(max_auprc, test_stats['auprc'])
-            print(f'Max Accuracy / F1 / AUROC / AUPRC: {max_accuracy:.2f}% / {max_f1:.2f}% / {max_auroc:.2f}% / {max_auprc:.2f}%\n')
+            best_stats['acc'] = max(best_stats['acc'], test_stats["acc"])
+            best_stats['f1'] = max(best_stats['f1'], test_stats['f1'])
+            best_stats['auroc'] = max(best_stats['auroc'], test_stats['auroc'])
+            best_stats['auprc'] = max(best_stats['auprc'], test_stats['auprc'])
+            print(f'Max Accuracy / F1 / AUROC / AUPRC: {best_stats["acc"]:.2f}% / {best_stats["f1"]:.2f}% / {best_stats["auroc"]:.2f}% / {best_stats["auprc"]:.2f}%\n')
         elif args.downstream_task == 'regression':
             print(f"Root Mean Squared Error (RMSE) / Pearson Correlation Coefficient (PCC) of the network on the {len(dataset_val)} test images:\
-                 {test_stats['rmse']:.4f} / {test_stats['pcc']:.2f}")
-            min_rmse = min(min_rmse, test_stats['rmse'])
-            print(f'Min Root Mean Squared Error (RMSE): {min_rmse:.4f}\n')
+                 {test_stats['rmse']:.4f} / {test_stats['pcc']:.4f}")
+            best_stats['rmse'] = min(best_stats['rmse'], test_stats['rmse'])
+            best_stats['pcc'] = max(best_stats['pcc'], test_stats['pcc'])
+            print(f'Min Root Mean Squared Error (RMSE) / Max Pearson Correlation Coefficient: {best_stats["rmse"]:.4f} / {best_stats["pcc"]:.4f}\n')
 
         log_stats = {**{f'train_{k}': v for k, v in train_stats.items()},
                         **{f'test_{k}': v for k, v in test_stats.items()},
@@ -457,6 +490,12 @@ def main(args):
                 log_writer.flush()
             with open(os.path.join(args.output_dir, "log.txt"), mode="a", encoding="utf-8") as f:
                 f.write(json.dumps(log_stats) + "\n")
+        
+        if args.wandb:
+            wandb.log(train_history | test_history)
+
+    if args.wandb:
+        wandb.log({f'Best Statistics/{k}': v for k, v in best_stats.items()})
 
     total_time = time.time() - start_time
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))
