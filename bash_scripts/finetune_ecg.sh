@@ -3,7 +3,7 @@
 
 # Basic parameters seed = [0, 101, 202, 303, 404]
 seed=(0)
-batch_size=(32)
+batch_size=(16)
 accum_iter=(1)
 
 epochs="400"
@@ -74,10 +74,10 @@ data_path=$data_base"/ecg/ecgs_train_Regression_noBase_gn.pt"
 labels_path=$data_base"/ecg/labelsOneHot/labels_train_Regression_stdNormed.pt"
 labels_mask_path=$data_base"/ecg/labels_train_Regression_mask.pt"
 downstream_task="regression"
-# # LV
-# lower_bnd="0"
-# upper_bnd="6"
-# nb_classes="6"
+# LV
+lower_bnd="0"
+upper_bnd="6"
+nb_classes="6"
 # # RV
 # lower_bnd="6"
 # upper_bnd="10"
@@ -86,10 +86,10 @@ downstream_task="regression"
 # lower_bnd="24"
 # upper_bnd="41"
 # nb_classes="17"
-# Ecc
-lower_bnd="41"
-upper_bnd="58"
-nb_classes="17"
+# # Ecc
+# lower_bnd="41"
+# upper_bnd="58"
+# nb_classes="17"
 # # Err
 # lower_bnd="58"
 # upper_bnd="75"
@@ -114,9 +114,9 @@ attention_pool=(True)
 num_workers="24"
 
 # Log specifications
-save_output="True"
+save_output="False"
 wandb="True"
-wandb_project="MAE_ECG_Fin_Tiny_Ecc"
+wandb_project="MAE_ECG_Fin_Tiny_LV"
 
 # Pretraining specifications
 pre_batch_size=(128)
@@ -145,14 +145,15 @@ do
                         for smth in "${smoothing[@]}"
                         do
 
-                            folder="ecg/Ecc/MMonly"
+                            folder="ecg/Ecc/MAE"
                             subfolder=("seed$sd/"$model_size"/t2500/p"$patch_height"x"$patch_width"/ld"$ld"/dp"$dp"/smth"$smth"/wd"$weight_decay"/m0.8/atp")
 
                             pre_data="b"$pre_batch_size"_blr"$pre_blr
                             # finetune=$checkpoint_base"/sprai/mae_he/mae/output/pre/"$folder"/"$subfolder"/pre_"$pre_data"/checkpoint-399.pth"
                             # finetune=$checkpoint_base"/ECGMultimodalContrastiveLearning/oezguen/checkpoints/mm_v230_mae_checkpoint.pth"
-                            finetune=$checkpoint_base"/ECGMultimodalContrastiveLearning/oezguen/checkpoints/mm_v283_mae_checkpoint.pth"
+                            # finetune=$checkpoint_base"/ECGMultimodalContrastiveLearning/oezguen/checkpoints/mm_v283_mae_checkpoint.pth"
                             # finetune=$checkpoint_base"/ECGMultimodalContrastiveLearning/pretrained_checkpoints/tiny/v1/checkpoint-399.pth"
+                            finetune=$checkpoint_base"/sprai/mae_he/mae/output/pre/ecg/seed0/tiny/t2500/p1x100/wd0.15/m0.8/pre_b128_blr1e-5/checkpoint-383-ncc-0.95.pth"
 
                             output_dir=$checkpoint_base"/sprai/mae_he/mae/output/fin/"$folder"/"$subfolder"/fin_b"$(($bs*$accum_iter))"_blr"$lr"_"$pre_data
                             log_dir=$checkpoint_base"/sprai/mae_he/mae/logs/fin/"$folder"/"$subfolder"/fin_b"$(($bs*$accum_iter))"_blr"$lr"_"$pre_data

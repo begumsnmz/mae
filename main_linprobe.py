@@ -350,7 +350,6 @@ def main(args):
     # hack: revise model's head with BN
     model.head = torch.nn.Sequential(torch.nn.BatchNorm1d(model.head.in_features, affine=False, eps=1e-6), model.head)
     # freeze all but the head
-    # INTERESTING NOTE: when removing the following 4 lines, performance is superior to finetuning (no idea why though)
     for _, p in model.named_parameters():
         p.requires_grad = False
     for _, p in model.head.named_parameters():

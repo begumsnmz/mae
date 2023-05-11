@@ -113,7 +113,7 @@ attention_pool=(False)
 num_workers="24"
 
 # Log specifications
-save_output="True"
+save_output="False"
 wandb="True"
 wandb_project="MAE_ECG_Fin_Tiny_Ecc"
 

@@ -6,7 +6,7 @@ seed="0"
 batch_size="128"
 accum_iter=(1)
 
-epochs="10"
+epochs="400"
 warmup_epochs="40"
 
 # Callback parameters
@@ -58,7 +58,7 @@ wandb="True"
 wandb_project="MAE_ECG_Pre"
 
 # Checkpoints
-# resume=$checkpoint_base"/sprai/mae_he/mae/output/pre/noExternal/tiny/2d/t37000/p65x50/m0.75/pre_noExternal_b"$(($batch_size*$accum_iter))"_blr"$blr_array"/checkpoint-450.pth"
+resume=$checkpoint_base"/sprai/mae_he/mae/output/pre/ecg/seed0/tiny/t2500/p1x100/wd0.15/m0.8/pre_b"$(($batch_size*$accum_iter))"_blr"$blr_array"/checkpoint-260-ncc-0.95.pth"
 
 for blr in "${blr_array[@]}"
 do
