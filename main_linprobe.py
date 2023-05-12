@@ -164,6 +164,8 @@ def get_args_parser():
     parser.add_argument('--wandb', action='store_true', default=False)
     parser.add_argument('--wandb_project', default='',
                         help='project where to wandb log')
+    parser.add_argument('--wandb_id', default='', type=str,
+                        help='id of the current run')
     parser.add_argument('--device', default='cuda',
                         help='device to use for training / testing')
     parser.add_argument('--seed', default=0, type=int)
@@ -278,7 +280,10 @@ def main(args):
 
         if args.wandb == True:
             config = vars(args)
-            wandb.init(project=args.wandb_project, config=config, entity="oturgut")
+            if args.wandb_id:
+                wandb.init(project=args.wandb_project, id=args.wandb_id, config=config, entity="oturgut")
+            else:
+                wandb.init(project=args.wandb_project, config=config, entity="oturgut")
     elif args.eval and "checkpoint" not in args.resume.split("/")[-1]:
         log_writer = SummaryWriter(log_dir=args.log_dir + "/eval")
     else:

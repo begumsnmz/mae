@@ -113,9 +113,10 @@ attention_pool=(False)
 num_workers="24"
 
 # Log specifications
-save_output="False"
+save_output="True"
 wandb="True"
 wandb_project="MAE_ECG_Fin_Tiny_Ecc"
+wandb_id=""
 
 # Pretraining specifications
 pre_batch_size=(128)
@@ -125,7 +126,7 @@ pre_blr=(1e-5)
 eval="False"
 # As filename: State the checkpoint for the inference of a specific model
 # or state the (final) epoch for the inference of all models up to this epoch
-#resume=$checkpoint_base"/sprai/mae_he/mae/output/lin/"$folder"/id/"$subfolder"/lin_b"$(($batch_size*$accum_iter))"_blr"$blr"_"$pre_data"/checkpoint-89.pth"
+# resume=$checkpoint_base"/sprai/mae_he/mae/output/lin/"$folder"/id/"$subfolder"/lin_b"$(($batch_size*$accum_iter))"_blr"$blr"_"$pre_data"/checkpoint-89.pth"
 
 for sd in "${seed[@]}"
 do
@@ -154,7 +155,7 @@ do
                         output_dir=$checkpoint_base"/sprai/mae_he/mae/output/lin/"$folder"/"$subfolder"/lin_b"$(($bs*$accum_iter))"_blr"$lr"_"$pre_data
                         log_dir=$checkpoint_base"/sprai/mae_he/mae/logs/lin/"$folder"/"$subfolder"/lin_b"$(($bs*$accum_iter))"_blr"$lr"_"$pre_data
 
-                        # resume=$checkpoint_base"/sprai/mae_he/mae/output/lin/"$folder"/"$subfolder"/lin_b"$bs"_blr"$lr"_"$pre_data"/checkpoint-78.pth"
+                        # resume=$checkpoint_base"/sprai/mae_he/mae/output/lin/"$folder"/"$subfolder"/lin_b"$bs"_blr"$lr"_"$pre_data"/checkpoint-6-pcc-0.27.pth"
 
                         if [ "$downstream_task" = "regression" ]; then
                             cmd="python3 main_linprobe.py --lower_bnd $lower_bnd --upper_bnd $upper_bnd --seed $sd --downstream_task $downstream_task --jitter_sigma $jitter_sigma --rescaling_sigma $rescaling_sigma --ft_surr_phase_noise $ft_surr_phase_noise --input_channels $input_channels --input_electrodes $input_electrodes --time_steps $time_steps --patch_height $patch_height --patch_width $patch_width --model $model --batch_size $bs --epochs $epochs --patience $patience --max_delta $max_delta --accum_iter $accum_iter --weight_decay $wd --layer_decay $ld --min_lr $min_lr --blr $lr --warmup_epoch $warmup_epochs --smoothing $smth --data_path $data_path --labels_path $labels_path --val_data_path $val_data_path --val_labels_path $val_labels_path --nb_classes $nb_classes --log_dir $log_dir --num_workers $num_workers"
@@ -194,6 +195,9 @@ do
 
                         if [ "$wandb" = "True" ]; then
                             cmd=$cmd" --wandb --wandb_project $wandb_project"
+                            if [ ! -z "$wandb_id" ]; then
+                                cmd=$cmd" --wandb_id $wandb_id"
+                            fi
                         fi
 
                         if [ "$save_output" = "True" ]; then
@@ -202,6 +206,10 @@ do
 
                         if [ "$eval" = "True" ]; then
                             cmd=$cmd" --eval --resume $resume"
+                        fi
+
+                        if [ ! -z "$resume" ]; then
+                            cmd=$cmd" --resume $resume"
                         fi
                         
                         echo $cmd && $cmd

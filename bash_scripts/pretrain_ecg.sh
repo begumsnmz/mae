@@ -56,9 +56,7 @@ num_workers="32"
 save_output="True"
 wandb="True"
 wandb_project="MAE_ECG_Pre"
-
-# Checkpoints
-resume=$checkpoint_base"/sprai/mae_he/mae/output/pre/ecg/seed0/tiny/t2500/p1x100/wd0.15/m0.8/pre_b"$(($batch_size*$accum_iter))"_blr"$blr_array"/checkpoint-260-ncc-0.95.pth"
+wandb_id="1dn8697g"
 
 for blr in "${blr_array[@]}"
 do
@@ -74,6 +72,8 @@ do
 
             output_dir=$checkpoint_base"/sprai/mae_he/mae/output/pre/"$folder"/"$subfolder"/"$pre_data
             log_dir=$checkpoint_base"/sprai/mae_he/mae/logs/pre/"$folder"/"$subfolder"/"$pre_data
+
+            resume=$checkpoint_base"/sprai/mae_he/mae/output/pre/"$folder"/"$subfolder"/"$pre_data"/checkpoint-8-ncc-0.37.pth"
         
             cmd="python3 main_pretrain.py --seed $seed --patience $patience --max_delta $max_delta --jitter_sigma $jitter_sigma --rescaling_sigma $rescaling_sigma --ft_surr_phase_noise $ft_surr_phase_noise --input_channels $input_channels --input_electrodes $input_electrodes --time_steps $time_steps --patch_height $patch_height --patch_width $patch_width --model $model --batch_size $batch_size --epochs $epochs --accum_iter $acc_it --mask_ratio $mr --weight_decay $weight_decay --blr $blr --warmup_epoch $warmup_epochs --data_path $data_path --val_data_path $val_data_path --log_dir $log_dir --num_workers $num_workers"
 
@@ -83,6 +83,9 @@ do
 
             if [ "$wandb" = "True" ]; then
                 cmd=$cmd" --wandb --wandb_project $wandb_project"
+                if [ ! -z "$wandb_id" ]; then
+                    cmd=$cmd" --wandb_id $wandb_id"
+                fi
             fi
 
             if [ "$save_output" = "True" ]; then
