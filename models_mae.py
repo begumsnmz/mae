@@ -25,7 +25,8 @@ class MaskedAutoencoderViT(nn.Module):
     def __init__(self, img_size=(1, 65, 68096), patch_size=(65, 112),
                  embed_dim=1024, depth=24, num_heads=16,
                  decoder_embed_dim=512, decoder_depth=8, decoder_num_heads=16,
-                 mlp_ratio=4., norm_layer=nn.LayerNorm, norm_pix_loss=False):
+                 mlp_ratio=4., norm_layer=nn.LayerNorm, norm_pix_loss=False, 
+                 ncc_weight:float=0.0):
         super().__init__()
 
         # --------------------------------------------------------------------------
@@ -59,6 +60,8 @@ class MaskedAutoencoderViT(nn.Module):
         # --------------------------------------------------------------------------
 
         self.norm_pix_loss = norm_pix_loss
+        
+        self.ncc_weight = ncc_weight
 
         self.initialize_weights()
 
@@ -245,11 +248,10 @@ class MaskedAutoencoderViT(nn.Module):
         cross_corrs = (1.0 / (imgs.shape[-1]-1)) * torch.sum(target_normalized * pred_normalized, dim=-1)
         ncc = cross_corrs.sum() / nb_of_signals
 
-        reg_weight = 0.10
         loss = loss.mean()
 
-        # return (1-reg_weight)*loss_patches + reg_weight*(1-ncc)
-        return (1-reg_weight)*loss + reg_weight*(1-ncc)
+        # return (1-self.ncc_weight)*loss_patches + self.ncc_weight*(1-ncc)
+        return (1-self.ncc_weight)*loss + self.ncc_weight*(1-ncc)
 
 
     def forward(self, imgs, mask_ratio=0.75):

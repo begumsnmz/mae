@@ -77,6 +77,9 @@ def get_args_parser():
     parser.add_argument('--norm_pix_loss', action='store_true', default=False,
                         help='Use (per-patch) normalized pixels as targets for computing loss')
 
+    parser.add_argument('--ncc_weight', type=float, default=0.1,
+                        help='Add normalized cross-correlation (ncc) as additional loss term')
+
     # Augmentation parameters
     parser.add_argument('--mask_ratio', default=0.75, type=float,
                         help='Masking ratio (percentage of removed patches).')
@@ -223,7 +226,8 @@ def main(args):
     model = models_mae.__dict__[args.model](
         img_size=args.input_size,
         patch_size=args.patch_size,
-        norm_pix_loss=args.norm_pix_loss
+        norm_pix_loss=args.norm_pix_loss,
+        ncc_weight=args.ncc_weight
     )
 
     model.to(device)

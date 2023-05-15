@@ -52,8 +52,8 @@ if [ "$path" = "tower" ]; then
     data_base="/home/oturgut/sprai/data/preprocessed"
     checkpoint_base="/home/oturgut"
 else
-    data_base="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects"
-    checkpoint_base="/home/guests/oezguen_turgut"
+    data_base="/vol/aimspace/projects/ukbb/cardiac/cardiac_segmentations/projects"
+    checkpoint_base="/vol/aimspace/users/tuo"
 fi
 
 # Dataset parameters
@@ -117,7 +117,7 @@ num_workers="24"
 save_output="True"
 wandb="True"
 wandb_project="MAE_ECG_Fin_Tiny_LV"
-wandb_id="3f324zxu"
+wandb_id=""
 
 # Pretraining specifications
 pre_batch_size=(128)

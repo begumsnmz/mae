@@ -25,6 +25,8 @@ patch_width=(100)
 
 norm_pix_loss="False"
 
+ncc_weight=0.5
+
 # Augmentation parameters
 mask_ratio=(0.8)
 
@@ -37,13 +39,13 @@ blr_array=(1e-5)
 weight_decay=(0.15)
 
 # Data path
-path="tower"
+path="server"
 if [ "$path" = "tower" ]; then
     data_base="/home/oturgut/sprai/data/preprocessed"
     checkpoint_base="/home/oturgut"
 else
-    data_base="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects"
-    checkpoint_base="/home/guests/oezguen_turgut"
+    data_base="/vol/aimspace/projects/ukbb/cardiac/cardiac_segmentations/projects"
+    checkpoint_base="/vol/aimspace/users/tuo"
 fi
 
 # Dataset parameters
@@ -56,7 +58,7 @@ num_workers="32"
 save_output="True"
 wandb="True"
 wandb_project="MAE_ECG_Pre"
-wandb_id="1dn8697g"
+wandb_id=""
 
 for blr in "${blr_array[@]}"
 do
@@ -68,14 +70,14 @@ do
             pre_data="pre_b"$(($batch_size*$acc_it))"_blr"$blr
 
             folder="ecg"
-            subfolder="seed$seed/$model_size/t$time_steps/p$patch_height"x"$patch_width/wd$weight_decay/m$mr"
+            subfolder="ncc_weight$ncc_weight/seed$seed/$model_size/t$time_steps/p$patch_height"x"$patch_width/wd$weight_decay/m$mr"
 
             output_dir=$checkpoint_base"/sprai/mae_he/mae/output/pre/"$folder"/"$subfolder"/"$pre_data
             log_dir=$checkpoint_base"/sprai/mae_he/mae/logs/pre/"$folder"/"$subfolder"/"$pre_data
 
-            resume=$checkpoint_base"/sprai/mae_he/mae/output/pre/"$folder"/"$subfolder"/"$pre_data"/checkpoint-8-ncc-0.37.pth"
+            # resume=$checkpoint_base"/sprai/mae_he/mae/output/pre/"$folder"/"$subfolder"/"$pre_data"/checkpoint-8-ncc-0.37.pth"
         
-            cmd="python3 main_pretrain.py --seed $seed --patience $patience --max_delta $max_delta --jitter_sigma $jitter_sigma --rescaling_sigma $rescaling_sigma --ft_surr_phase_noise $ft_surr_phase_noise --input_channels $input_channels --input_electrodes $input_electrodes --time_steps $time_steps --patch_height $patch_height --patch_width $patch_width --model $model --batch_size $batch_size --epochs $epochs --accum_iter $acc_it --mask_ratio $mr --weight_decay $weight_decay --blr $blr --warmup_epoch $warmup_epochs --data_path $data_path --val_data_path $val_data_path --log_dir $log_dir --num_workers $num_workers"
+            cmd="python3 main_pretrain.py --seed $seed --patience $patience --max_delta $max_delta --jitter_sigma $jitter_sigma --rescaling_sigma $rescaling_sigma --ft_surr_phase_noise $ft_surr_phase_noise --input_channels $input_channels --input_electrodes $input_electrodes --time_steps $time_steps --patch_height $patch_height --patch_width $patch_width --ncc_weight $ncc_weight --model $model --batch_size $batch_size --epochs $epochs --accum_iter $acc_it --mask_ratio $mr --weight_decay $weight_decay --blr $blr --warmup_epoch $warmup_epochs --data_path $data_path --val_data_path $val_data_path --log_dir $log_dir --num_workers $num_workers"
 
             if [ "$norm_pix_loss" = "True" ]; then
                 cmd=$cmd" --norm_pix_loss"

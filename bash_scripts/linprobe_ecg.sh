@@ -46,13 +46,13 @@ smoothing=(0.0)
 from_scratch="False"
 
 # Data path
-path="tower"
+path="server"
 if [ "$path" = "tower" ]; then
     data_base="/home/oturgut/sprai/data/preprocessed"
     checkpoint_base="/home/oturgut"
 else
-    data_base="/home/guests/projects/ukbb/cardiac/cardiac_segmentations/projects"
-    checkpoint_base="/home/guests/oezguen_turgut"
+    data_base="/vol/aimspace/projects/ukbb/cardiac/cardiac_segmentations/projects"
+    checkpoint_base="/vol/aimspace/users/tuo"
 fi
 
 # Dataset parameters
@@ -113,7 +113,7 @@ attention_pool=(False)
 num_workers="24"
 
 # Log specifications
-save_output="True"
+save_output="False"
 wandb="True"
 wandb_project="MAE_ECG_Fin_Tiny_Ecc"
 wandb_id=""
