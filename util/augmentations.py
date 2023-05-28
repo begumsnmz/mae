@@ -1,5 +1,7 @@
 import sys
 
+import random
+
 import torch
 import torch.fft as fft
 
@@ -490,3 +492,57 @@ class SignFlip(object):
             return -1*sample
         else:
             return sample
+        
+class SpecAugment(object):
+    """
+        Randomly masking frequency or time bins of signal's short-time Fourier transform.
+        See https://arxiv.org/pdf/2005.13249.pdf
+    """
+    def __init__(self, masking_ratio=0.2, n_fft=120) -> None:
+        self.masking_ratio = masking_ratio
+        self.n_fft = n_fft
+
+    def __call__(self, sample) -> Any:
+        sample_dim = sample.dim()
+
+        if sample_dim < 3:
+            masked_sample = self._mask_spectrogram(sample)
+        elif sample_dim == 3:
+            # perform masking separately for all entries in the first dimension 
+            # and eventually concatenate the masked entries to retrieve the intial shape 
+            masked_sample = torch.Tensor()
+            for i in range(sample.shape[0]):
+                masked_sub_sample = self._mask_spectrogram(sample[i])
+                masked_sample = torch.cat((masked_sample, masked_sub_sample.unsqueeze(0)), dim=0)
+        else: 
+            print(f"Augmentation was not built for {sample_dim}-D input")
+
+        return masked_sample
+
+    def _mask_spectrogram(self, sample):
+        sample_length = sample.shape[-1]
+
+        # compute the Fourier transform
+        spec = torch.stft(sample, n_fft=self.n_fft, return_complex=True)
+
+        if random.random() < 0.5:
+            # frequency domain
+            masked_block_size = int(spec.shape[-2]*self.masking_ratio)
+            start_idx = random.randint(0, spec.shape[-2] - masked_block_size)
+            end_idx = start_idx + masked_block_size
+
+            # mask the bins
+            spec[..., start_idx:end_idx, :] = 0.+0.j
+        else:
+            # time domain
+            masked_block_size = int(spec.shape[-1]*self.masking_ratio)
+            start_idx = random.randint(0, spec.shape[-1] - masked_block_size)
+            end_idx = start_idx + masked_block_size
+
+            # mask the bins
+            spec[..., start_idx:end_idx] = 0.+0.j
+
+        # perform the inverse Fourier transform to get the new signal
+        masked_sample = torch.istft(spec, n_fft=self.n_fft, length=sample_length)
+
+        return masked_sample

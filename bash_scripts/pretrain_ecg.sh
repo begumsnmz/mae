@@ -25,7 +25,7 @@ patch_width=(100)
 
 norm_pix_loss="False"
 
-ncc_weight=0.5
+ncc_weight=0.1
 
 # Augmentation parameters
 mask_ratio=(0.8)
@@ -39,7 +39,7 @@ blr_array=(1e-5)
 weight_decay=(0.15)
 
 # Data path
-path="server"
+path="tower"
 if [ "$path" = "tower" ]; then
     data_base="/home/oturgut/sprai/data/preprocessed"
     checkpoint_base="/home/oturgut"

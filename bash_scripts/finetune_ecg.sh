@@ -39,7 +39,7 @@ layer_decay=(0.5)
 # Optimizer parameters
 blr=(1e-6) # 3e-5 if from scratch
 min_lr="0.0"
-weight_decay=(0.2)
+weight_decay=(0.1)
 
 # Criterion parameters
 smoothing=(0.2)
@@ -111,7 +111,7 @@ pos_label="1"
 
 global_pool=(True)
 attention_pool=(True)
-num_workers="24"
+num_workers="32"
 
 # Log specifications
 save_output="False"
@@ -146,8 +146,8 @@ do
                         for smth in "${smoothing[@]}"
                         do
 
-                            folder="ecg/LV/MM"
-                            subfolder=("seed$sd/"$model_size"/t2500/p"$patch_height"x"$patch_width"/ld"$ld"/dp"$dp"/smth"$smth"/wd"$weight_decay"/m0.8/atp")
+                            folder="ecg/Diabetes"
+                            subfolder=("seed$sd/"$model_size"/t2500/p"$patch_height"x"$patch_width"/ld"$ld"/dp"$dp"/smth"$smth"/wd"$weight_decay"/m0.8")
 
                             pre_data="b"$pre_batch_size"_blr"$pre_blr
                             # finetune=$checkpoint_base"/sprai/mae_he/mae/output/pre/"$folder"/"$subfolder"/pre_"$pre_data"/checkpoint-399.pth"
