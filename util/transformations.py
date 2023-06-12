@@ -236,3 +236,17 @@ class GaussianFiltering(object):
         x_t = x_t[:,:int(N/factor)]
 
         return torch.real(x_t)
+    
+class PowerSpectralDensity(object):
+    """
+        Compute the power spectral density.
+    """
+    def __init__(self, fs:int=100, nperseg=None, return_onesided=True) -> None:
+        self.fs = fs
+        self.nperseg = nperseg
+        self.return_onesided = return_onesided
+
+    def __call__(self, sample):
+        _, psd = scipy.signal.welch(sample, fs=self.fs, nperseg=self.nperseg, return_onesided=self.return_onesided)
+
+        return torch.from_numpy(psd)

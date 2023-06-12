@@ -27,7 +27,7 @@ class SignalDataset(Dataset):
         self.data = torch.load(data_path, map_location=torch.device('cpu')) # load to ram
 
         if labels_path:
-            self.labels = torch.load(labels_path, map_location=torch.device('cpu')) # load to ram
+            self.labels = torch.load(labels_path, map_location=torch.device('cpu'))[..., None] # load to ram
         else:
             self.labels = torch.zeros(size=(len(self.data), ))
 
@@ -54,19 +54,24 @@ class SignalDataset(Dataset):
         data = data[:, :self.args.input_electrodes, :]
         
         if self.transform == True:
-            transform = augmentations.CropResizing(fixed_crop_len=self.args.input_size[-1], start_idx=0, resize=False)
+            transform = transforms.Compose([
+                augmentations.CropResizing(fixed_crop_len=self.args.input_size[-1], start_idx=0, resize=False),
+                # transformations.PowerSpectralDensity(fs=100, nperseg=1000, return_onesided=False),
+                # transformations.MinMaxScaling(lower=-1, upper=1, mode="channel_wise")
+            ])
             data = transform(data)
 
         if self.augment == True:
-            # lower_bnd = self.args.crop_lbd * self.args.input_size[-1] / data.shape[-1]
-            # upper_bnd = 1.00 * self.args.input_size[-1] / data.shape[-1]
-            augment = transforms.Compose([augmentations.Jitter(sigma=self.args.jitter_sigma),
-                                          augmentations.Rescaling(sigma=self.args.rescaling_sigma),
-                                          augmentations.FTSurrogate(phase_noise_magnitude=self.args.ft_surr_phase_noise, prob=0.5),
-                                          augmentations.CropResizing(fixed_crop_len=self.args.input_size[-1], resize=False),
-                                          #augmentations.TimeFlip(prob=0.33),
-                                          #augmentations.SignFlip(prob=0.33)
-                                          ])
+            augment = transforms.Compose([
+                augmentations.CropResizing(fixed_crop_len=self.args.input_size[-1], resize=False),
+                # transformations.PowerSpectralDensity(fs=100, nperseg=1000, return_onesided=False),
+                # transformations.MinMaxScaling(lower=-1, upper=1, mode="channel_wise"),
+                augmentations.FTSurrogate(phase_noise_magnitude=self.args.ft_surr_phase_noise, prob=0.5),
+                augmentations.Jitter(sigma=self.args.jitter_sigma),
+                augmentations.Rescaling(sigma=self.args.rescaling_sigma),
+                augmentations.TimeFlip(prob=0.33),
+                augmentations.SignFlip(prob=0.33)
+            ])
             data = augment(data)
         
         if self.downstream_task == 'classification':

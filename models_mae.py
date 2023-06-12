@@ -260,17 +260,17 @@ class MaskedAutoencoderViT(nn.Module):
         loss = self.forward_loss(imgs, pred, mask)
 
         orig_patched = self.patchify(imgs)
-        orig_masked_unpatched = self.unpatchify(orig_patched*mask.unsqueeze(dim=-1))
+        orig_masked_unpatched = self.unpatchify(orig_patched*(1-mask).unsqueeze(dim=-1))
         imgs_hat = self.unpatchify(pred)
-        imgs_hat_masked = self.unpatchify(pred*mask.unsqueeze(dim=-1))
+        imgs_hat_masked = self.unpatchify(pred*(1-mask).unsqueeze(dim=-1))
 
         return loss, imgs_hat, imgs_hat_masked
 
 
 def mae_vit_pluto_patchX_dec192d2b(**kwargs):
     model = MaskedAutoencoderViT(
-        embed_dim=256, depth=3, num_heads=6,
-        decoder_embed_dim=192, decoder_depth=2, decoder_num_heads=8,
+        embed_dim=256, depth=2, num_heads=6,
+        decoder_embed_dim=192, decoder_depth=2, decoder_num_heads=6,
         mlp_ratio=4, norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
     return model
 

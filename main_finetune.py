@@ -503,7 +503,7 @@ def main(args):
         if args.downstream_task == 'classification':
             eval_criterion = "auroc"
         elif args.downstream_task == 'regression':
-            eval_criterion = "pcc"
+            eval_criterion = "rmse"
 
         if eval_criterion == "loss" or eval_criterion == "rmse":
             if early_stop.evaluate_decreasing_metric(val_metric=test_stats[eval_criterion]):
