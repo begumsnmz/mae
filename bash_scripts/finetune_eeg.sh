@@ -33,7 +33,7 @@ jitter_sigma="0.2"
 rescaling_sigma="0.15"
 ft_surr_phase_noise="0.075"
 
-drop_path=(0.0)
+drop_path=(0.1)
 layer_decay=(0.75)
 
 # Optimizer parameters
@@ -52,7 +52,7 @@ if [ "$path" = "tower" ]; then
     data_base="/home/oturgut/sprai/data/preprocessed"
     checkpoint_base="/home/oturgut"
 else
-    data_base="/vol/aimspace/projects/ukbb/cardiac/cardiac_segmentations/projects"
+    data_base="/vol/aimspace/users/tuo/sprai/data/preprocessed"
     checkpoint_base="/vol/aimspace/users/tuo"
 fi
 
@@ -119,7 +119,7 @@ do
                             subfolder=("seed$sd/"$model_size"/t"$time_steps"/p"$patch_height"x"$patch_width"/ld"$ld"/dp"$dp"/smth"$smth"/wd"$weight_decay"/m0.8")
 
                             pre_data="b"$pre_batch_size"_blr"$pre_blr
-                            finetune=$checkpoint_base"/sprai/mae_he/mae/output/pre/eeg/LEMONSEED/ncc_weight0.1/seed0/tiny/t1000/p1x25/wd0.15/m0.75/pre_b128_blr3e-5/checkpoint-398-ncc-0.89.pth"
+                            finetune=$checkpoint_base"/sprai/mae_he/mae/output/pre/eeg/LEMONSEEDDINHHEITMANN/lp_hp/ncc_weight0.1/seed0/tiny/t1000/p1x25/wd0.15/m0.75/pre_b128_blr3e-5/checkpoint-371-ncc-0.90.pth"
 
                             output_dir=$checkpoint_base"/sprai/mae_he/mae/output/fin/"$folder"/"$subfolder"/fin_b"$(($bs*$accum_iter))"_blr"$lr"_"$pre_data
                             log_dir=$checkpoint_base"/sprai/mae_he/mae/logs/fin/"$folder"/"$subfolder"/fin_b"$(($bs*$accum_iter))"_blr"$lr"_"$pre_data

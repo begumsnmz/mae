@@ -44,7 +44,7 @@ if [ "$path" = "tower" ]; then
     data_base="/home/oturgut/sprai/data/preprocessed"
     checkpoint_base="/home/oturgut"
 else
-    data_base="/vol/aimspace/projects/ukbb/cardiac/cardiac_segmentations/projects"
+    data_base="/vol/aimspace/users/tuo/sprai/data/preprocessed"
     checkpoint_base="/vol/aimspace/users/tuo"
 fi
 
