@@ -17,7 +17,7 @@ max_delta="0.00"
 input_channels="1"
 input_electrodes="65"
 time_steps="1000"
-model_size="tiny"
+model_size="pluto"
 model="mae_vit_"$model_size"_patchX"
 
 patch_height="1"
@@ -35,16 +35,16 @@ rescaling_sigma="0.25"
 ft_surr_phase_noise="0.1"
 
 # Optimizer parameters
-blr_array=(3e-5)
+blr_array=(1e-4)
 weight_decay=(0.15)
 
 # Data path
-path="tower"
+path="server"
 if [ "$path" = "tower" ]; then
     data_base="/home/oturgut/sprai/data/preprocessed"
     checkpoint_base="/home/oturgut"
 else
-    data_base="/vol/aimspace/projects/ukbb/cardiac/cardiac_segmentations/projects"
+    data_base="/vol/aimspace/users/tuo/sprai/data/preprocessed"
     checkpoint_base="/vol/aimspace/users/tuo"
 fi
 

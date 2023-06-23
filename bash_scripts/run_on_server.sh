@@ -1,5 +1,5 @@
 #!/usr/bin/bash
-# Fine tuning 
+# Slurm bash script
 
 #SBATCH --job-name=mae_fin
 #SBATCH --output=/vol/aimspace/users/tuo/sprai/slurm_output/fin/ecg/mae_fin-%A.out  # Standard output of the script (Can be absolute or relative path). %A adds the job id to the file name so you can launch the same script multiple times and get different logging files
@@ -17,5 +17,5 @@ source /opt/anaconda3/etc/profile.d/conda.sh
 conda deactivate # If you launch your script from a terminal where your environment is already loaded, conda won't activate the environment. This guards against that. Not necessary if you always run this script from a clean terminal
 conda activate mae
 
-cmd="./bash_scripts/finetune_ecg.sh"
+cmd="./bash_scripts/finetune_eeg.sh"
 echo $cmd && $cmd

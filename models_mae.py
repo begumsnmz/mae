@@ -269,7 +269,7 @@ class MaskedAutoencoderViT(nn.Module):
 
 def mae_vit_pluto_patchX_dec192d2b(**kwargs):
     model = MaskedAutoencoderViT(
-        embed_dim=256, depth=2, num_heads=6,
+        embed_dim=256, depth=2, num_heads=8,
         decoder_embed_dim=192, decoder_depth=2, decoder_num_heads=6,
         mlp_ratio=4, norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
     return model
