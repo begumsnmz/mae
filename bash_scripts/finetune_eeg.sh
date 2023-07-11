@@ -88,6 +88,10 @@ wandb="True"
 wandb_project="MAE_EEG_Fin_Tiny_Age_hyp"
 wandb_id=""
 
+plot_attention_map="False"
+plot_embeddings="False"
+save_embeddings="False"
+
 # Pretraining specifications
 pre_batch_size=(128)
 pre_blr=(1e-5)
@@ -172,6 +176,18 @@ do
 
                             if [ "$save_output" = "True" ]; then
                                 cmd=$cmd" --output_dir $output_dir"
+                            fi
+
+                            if [ "$plot_attention_map" = "True" ]; then
+                                cmd=$cmd" --plot_attention_map"
+                            fi
+
+                            if [ "$plot_embeddings" = "True" ]; then
+                                cmd=$cmd" --plot_embeddings"
+                            fi
+
+                            if [ "$save_embeddings" = "True" ]; then
+                                cmd=$cmd" --embeddings_dir $output_dir"
                             fi
 
                             if [ "$eval" = "True" ]; then

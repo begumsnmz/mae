@@ -9,6 +9,8 @@
 # BEiT: https://github.com/microsoft/unilm/tree/master/beit
 # --------------------------------------------------------
 
+import os
+
 import math
 import sys
 from typing import Iterable, Optional
@@ -21,6 +23,12 @@ from torchmetrics import MultioutputWrapper
 import sklearn.metrics
 
 import wandb
+
+import umap
+import matplotlib
+import matplotlib.pyplot as plt
+import numpy as np
+import seaborn as sns
 
 from timm.data import Mixup
 from timm.utils import accuracy
@@ -228,6 +236,7 @@ def evaluate(data_loader, model, device, epoch, log_writer=None, args=None):
     metric_auroc = torchmetrics.AUROC(num_classes=args.nb_classes, pos_label=args.pos_label, average='macro').to(device=device)
     preds = []
     trgts = []
+    embeddings = torch.Tensor().to(device=args.device)
     # tp, fp, tn, fn = 0, 0, 0, 0
 
     # regression metrics
@@ -248,13 +257,18 @@ def evaluate(data_loader, model, device, epoch, log_writer=None, args=None):
 
         # compute output
         with torch.cuda.amp.autocast():
-            output = model(images)*target_mask
+            # output = model(images)*target_mask
+            embedding = model.forward_features(images)
+            output = model.forward_head(embedding)
+            output = output*target_mask
             loss = criterion(output, target)
 
         attention_map = model.blocks[-1].attn.attn_map
 
         # print("Target: ", [i.item() for i in target])
         # print("Output: ", [i.item() for i in torch.argmax(output, dim=1)])
+
+        embeddings = torch.cat((embeddings, embedding.detach().clone()), dim=0)
 
         metric_logger.update(loss=loss.item())
         if args.downstream_task == 'classification':
@@ -293,9 +307,15 @@ def evaluate(data_loader, model, device, epoch, log_writer=None, args=None):
             metric_logger.meters['rmse'].update(torch.tensor(rmse).mean().item(), n=batch_size)
             metric_logger.meters['pcc'].update(torch.tensor(pcc).mean().item(), n=batch_size)
 
-    if args.wandb:
+    if args.wandb and args.plot_attention_map:
         idx = 1 if args.batch_size > 1 else 0
         plot.plot_attention(images, attention_map, idx)
+
+    if args.embeddings_dir:
+        embeddings_path = os.path.join(args.embeddings_dir, "embeddings")
+        if not os.path.exists(embeddings_path):
+            os.makedirs(embeddings_path)
+        torch.save(embeddings.detach().cpu(), os.path.join(embeddings_path, f"embeddings_{epoch}.pt"))
 
     # gather the stats from all processes
     metric_logger.synchronize_between_processes()
@@ -366,6 +386,24 @@ def evaluate(data_loader, model, device, epoch, log_writer=None, args=None):
                 for i in range(target.shape[-1]):
                     test_history[f'Test/RMSE/{i}'] = torch.tensor(rmse[i]).item()
                     test_history[f'Test/PCC/{i}'] = pcc[i].item()
+
+            if args.plot_embeddings and epoch % 10 == 0:
+                reducer = umap.UMAP(n_components=2, metric='euclidean')
+                umap_proj = reducer.fit_transform(embeddings.cpu())
+                
+                cmap = matplotlib.cm.get_cmap('tab20') # for the colours
+
+                # plt.figure()
+                fig, ax = plt.subplots(figsize=(8, 8))
+
+                for label in range(args.nb_classes):
+                    indices = np.array(trgts)==label
+                    ax.scatter(umap_proj[indices, 0], umap_proj[indices, 1], c=np.array(cmap(label*3)).reshape(1, 4), label=label, alpha=0.5)
+
+                ax.legend(fontsize='large', markerscale=2)
+
+                test_history["UMAP Embeddings"] = wandb.Image(fig)
+                plt.close('all')
 
             # wandb.log(test_history)
     

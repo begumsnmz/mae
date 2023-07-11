@@ -3,7 +3,7 @@
 
 # Basic parameters seed = [0, 101, 202, 303, 404]
 seed=(0)
-batch_size=(32)
+batch_size=(8)
 accum_iter=(1)
 
 epochs="400"
@@ -11,7 +11,7 @@ warmup_epochs="5"
 
 # Callback parameters
 patience="25"
-max_delta="0.0" # for AUROC
+max_delta="0.25" # for AUROC
 
 # Model parameters
 input_channels="1"
@@ -33,21 +33,21 @@ jitter_sigma="0.2"
 rescaling_sigma="0.5"
 ft_surr_phase_noise="0.075"
 
-drop_path=(0.1)
-layer_decay=(0.5 0.75)
+drop_path=(0.2)
+layer_decay=(0.75)
 
 # Optimizer parameters
-blr=(1e-6 3e-6) # 3e-5 if from scratch
+blr=(3e-6) # 3e-5 if from scratch
 min_lr="0.0"
 weight_decay=(0.1)
 
 # Criterion parameters
-smoothing=(0.1)
+smoothing=(0.2)
 
 from_scratch="False"
 
 # Data path
-path="server"
+path="tower"
 if [ "$path" = "tower" ]; then
     data_base="/home/oturgut/sprai/data/preprocessed"
     checkpoint_base="/home/oturgut"
@@ -62,14 +62,14 @@ fi
 # labels_path=$data_base"/ecg/labelsOneHot/labels_train_flutter_all_balanced.pt"
 # downstream_task="classification"
 # nb_classes="2"
-# data_path=$data_base"/ecg/ecgs_train_diabetes_all_balanced_noBase_gn.pt"
-# labels_path=$data_base"/ecg/labelsOneHot/labels_train_diabetes_all_balanced.pt"
-# downstream_task="classification"
-# nb_classes="2"
-data_path=$data_base"/ecg/ecgs_train_CAD_all_balanced_noBase_gn.pt"
-labels_path=$data_base"/ecg/labelsOneHot/labels_train_CAD_all_balanced.pt"
+data_path=$data_base"/ecg/ecgs_train_diabetes_all_balanced_noBase_gn.pt"
+labels_path=$data_base"/ecg/labelsOneHot/labels_train_diabetes_all_balanced.pt"
 downstream_task="classification"
 nb_classes="2"
+# data_path=$data_base"/ecg/ecgs_train_CAD_all_balanced_noBase_gn.pt"
+# labels_path=$data_base"/ecg/labelsOneHot/labels_train_CAD_all_balanced.pt"
+# downstream_task="classification"
+# nb_classes="2"
 # data_path=$data_base"/ecg/ecgs_train_Regression_noBase_gn.pt"
 # labels_path=$data_base"/ecg/labelsOneHot/labels_train_Regression_stdNormed.pt"
 # labels_mask_path=$data_base"/ecg/labels_train_Regression_mask.pt"
@@ -99,12 +99,12 @@ nb_classes="2"
 # val_data_path=$data_base"/ecg/ecgs_val_ecg_imaging_noBase_gn.pt"
 # val_labels_path=$data_base"/ecg/labelsOneHot/labels_val_flutter_all.pt"
 # pos_label="1"
-# val_data_path=$data_base"/ecg/ecgs_val_ecg_imaging_noBase_gn.pt"
-# val_labels_path=$data_base"/ecg/labelsOneHot/labels_val_diabetes_all.pt"
-# pos_label="1"
 val_data_path=$data_base"/ecg/ecgs_val_ecg_imaging_noBase_gn.pt"
-val_labels_path=$data_base"/ecg/labelsOneHot/labels_val_CAD_all.pt"
+val_labels_path=$data_base"/ecg/labelsOneHot/labels_val_diabetes_all.pt"
 pos_label="1"
+# val_data_path=$data_base"/ecg/ecgs_val_ecg_imaging_noBase_gn.pt"
+# val_labels_path=$data_base"/ecg/labelsOneHot/labels_val_CAD_all.pt"
+# pos_label="1"
 # val_data_path=$data_base"/ecg/ecgs_val_Regression_noBase_gn.pt"
 # val_labels_path=$data_base"/ecg/labelsOneHot/labels_val_Regression_stdNormed.pt"
 # val_labels_mask_path=$data_base"/ecg/labels_val_Regression_mask.pt"
@@ -116,8 +116,12 @@ num_workers="32"
 # Log specifications
 save_output="False"
 wandb="True"
-wandb_project="MAE_ECG_Fin_Tiny_CAD_v1"
+wandb_project="MAE_ECG_Fin_Tiny_Diabetes_v1"
 wandb_id=""
+
+plot_attention_map="False"
+plot_embeddings="False"
+save_embeddings="False"
 
 # Pretraining specifications
 pre_batch_size=(128)
@@ -146,16 +150,16 @@ do
                         for smth in "${smoothing[@]}"
                         do
 
-                            folder="ecg/CAD/CLOCS"
+                            folder="ecg/Diabetes/MM/globalPool"
                             subfolder=("seed$sd/"$model_size"/t"$time_steps"/p"$patch_height"x"$patch_width"/ld"$ld"/dp"$dp"/smth"$smth"/wd"$weight_decay"/m0.8")
 
                             pre_data="b"$pre_batch_size"_blr"$pre_blr
                             # finetune=$checkpoint_base"/sprai/mae_he/mae/output/pre/"$folder"/"$subfolder"/pre_"$pre_data"/checkpoint-399.pth"
-                            # finetune=$checkpoint_base"/ECGMultimodalContrastiveLearning/oezguen/checkpoints/mm_v230_mae_checkpoint.pth"
+                            finetune=$checkpoint_base"/ECGMultimodalContrastiveLearning/oezguen/checkpoints/mm_v230_mae_checkpoint.pth"
                             # finetune=$checkpoint_base"/ECGMultimodalContrastiveLearning/oezguen/checkpoints/mm_v283_mae_checkpoint.pth"
                             # finetune=$checkpoint_base"/ECGMultimodalContrastiveLearning/pretrained_checkpoints/tiny/v1/checkpoint-399.pth"
                             # finetune=$checkpoint_base"/sprai/mae_he/mae/output/pre/ecg/seed0/tiny/t2500/p1x100/wd0.15/m0.8/pre_b128_blr1e-5/checkpoint-383-ncc-0.95.pth"
-                            finetune=$checkpoint_base"/ECGMultimodalContrastiveLearning/oezguen/checkpoints/ecg/ecg_v150_mae_checkpoint.pth"
+                            # finetune=$checkpoint_base"/ECGMultimodalContrastiveLearning/oezguen/checkpoints/ecg/ecg_v150_mae_checkpoint.pth"
 
                             output_dir=$checkpoint_base"/sprai/mae_he/mae/output/fin/"$folder"/"$subfolder"/fin_b"$(($bs*$accum_iter))"_blr"$lr"_"$pre_data
                             log_dir=$checkpoint_base"/sprai/mae_he/mae/logs/fin/"$folder"/"$subfolder"/fin_b"$(($bs*$accum_iter))"_blr"$lr"_"$pre_data
@@ -208,6 +212,18 @@ do
 
                             if [ "$save_output" = "True" ]; then
                                 cmd=$cmd" --output_dir $output_dir"
+                            fi
+
+                            if [ "$plot_attention_map" = "True" ]; then
+                                cmd=$cmd" --plot_attention_map"
+                            fi
+
+                            if [ "$plot_embeddings" = "True" ]; then
+                                cmd=$cmd" --plot_embeddings"
+                            fi
+
+                            if [ "$save_embeddings" = "True" ]; then
+                                cmd=$cmd" --embeddings_dir $output_dir"
                             fi
 
                             if [ "$eval" = "True" ]; then

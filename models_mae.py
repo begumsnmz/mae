@@ -270,7 +270,7 @@ class MaskedAutoencoderViT(nn.Module):
 def mae_vit_pluto_patchX_dec192d2b(**kwargs):
     model = MaskedAutoencoderViT(
         embed_dim=256, depth=2, num_heads=8,
-        decoder_embed_dim=192, decoder_depth=2, decoder_num_heads=6,
+        decoder_embed_dim=256, decoder_depth=2, decoder_num_heads=6,
         mlp_ratio=4, norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
     return model
 
@@ -284,14 +284,14 @@ def mae_vit_tiny_patchX_dec256d2b(**kwargs):
 def mae_vit_small_patchX_dec256d4b(**kwargs):
     model = MaskedAutoencoderViT(
         embed_dim=512, depth=4, num_heads=8,
-        decoder_embed_dim=256, decoder_depth=4, decoder_num_heads=8,
+        decoder_embed_dim=256, decoder_depth=2, decoder_num_heads=8,
         mlp_ratio=4, norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
     return model
 
 def mae_vit_medium_patchX_dec256d4b(**kwargs):
     model = MaskedAutoencoderViT(
         embed_dim=640, depth=6, num_heads=8,
-        decoder_embed_dim=256, decoder_depth=4, decoder_num_heads=8,
+        decoder_embed_dim=256, decoder_depth=2, decoder_num_heads=8,
         mlp_ratio=4, norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
     return model
 
