@@ -3,7 +3,7 @@
 
 # Basic parameters seed = [0, 101, 202, 303, 404]
 seed=(0)
-batch_size=(16)
+batch_size=(8)
 accum_iter=(1)
 
 epochs="400"
@@ -33,13 +33,13 @@ jitter_sigma="0.2"
 rescaling_sigma="0.5"
 ft_surr_phase_noise="0.075"
 
-drop_path=(0.0)
-layer_decay=(0.75)
+drop_path=(0.2)
+layer_decay=(0.5)
 
 # Optimizer parameters
-blr=(1e-6) # 3e-5 if from scratch
+blr=(3e-6) # 3e-5 if from scratch
 min_lr="0.0"
-weight_decay=(0.1)
+weight_decay=(0.2)
 
 # Criterion parameters
 smoothing=(0.1)
@@ -66,18 +66,18 @@ fi
 # labels_path=$data_base"/ecg/labelsOneHot/labels_train_diabetes_all_balanced.pt"
 # downstream_task="classification"
 # nb_classes="2"
-data_path=$data_base"/ecg/ecgs_train_CAD_all_balanced_noBase_gn.pt"
-labels_path=$data_base"/ecg/labelsOneHot/labels_train_CAD_all_balanced.pt"
-downstream_task="classification"
-nb_classes="2"
-# data_path=$data_base"/ecg/ecgs_train_Regression_noBase_gn.pt"
-# labels_path=$data_base"/ecg/labelsOneHot/labels_train_Regression_stdNormed.pt"
-# labels_mask_path=$data_base"/ecg/labels_train_Regression_mask.pt"
-# downstream_task="regression"
-# # LV
-# lower_bnd="0"
-# upper_bnd="6"
-# nb_classes="6"
+# data_path=$data_base"/ecg/ecgs_train_CAD_hundredth_balanced_noBase_gn.pt"
+# labels_path=$data_base"/ecg/labelsOneHot/labels_train_CAD_hundredth_balanced.pt"
+# downstream_task="classification"
+# nb_classes="2"
+data_path=$data_base"/ecg/ecgs_train_Regression_noBase_gn.pt"
+labels_path=$data_base"/ecg/labelsOneHot/labels_train_Regression_stdNormed.pt"
+labels_mask_path=$data_base"/ecg/labels_train_Regression_mask.pt"
+downstream_task="regression"
+# LV
+lower_bnd="0"
+upper_bnd="6"
+nb_classes="6"
 # # RV
 # lower_bnd="6"
 # upper_bnd="10"
@@ -102,12 +102,12 @@ nb_classes="2"
 # val_data_path=$data_base"/ecg/ecgs_val_ecg_imaging_noBase_gn.pt"
 # val_labels_path=$data_base"/ecg/labelsOneHot/labels_val_diabetes_all.pt"
 # pos_label="1"
-val_data_path=$data_base"/ecg/ecgs_val_ecg_imaging_noBase_gn.pt"
-val_labels_path=$data_base"/ecg/labelsOneHot/labels_val_CAD_all.pt"
-pos_label="1"
-# val_data_path=$data_base"/ecg/ecgs_val_Regression_noBase_gn.pt"
-# val_labels_path=$data_base"/ecg/labelsOneHot/labels_val_Regression_stdNormed.pt"
-# val_labels_mask_path=$data_base"/ecg/labels_val_Regression_mask.pt"
+# val_data_path=$data_base"/ecg/ecgs_val_ecg_imaging_noBase_gn.pt"
+# val_labels_path=$data_base"/ecg/labelsOneHot/labels_val_CAD_all.pt"
+# pos_label="1"
+val_data_path=$data_base"/ecg/ecgs_val_Regression_noBase_gn.pt"
+val_labels_path=$data_base"/ecg/labelsOneHot/labels_val_Regression_stdNormed.pt"
+val_labels_mask_path=$data_base"/ecg/labels_val_Regression_mask.pt"
 
 global_pool=(True)
 attention_pool=(True)
@@ -116,12 +116,13 @@ num_workers="24"
 # Log specifications
 save_output="True"
 wandb="True"
-wandb_project="MAE_ECG_Fin_Tiny_CAD_v1"
+wandb_project="MAE_ECG_Fin_Tiny_LV"
 wandb_id=""
 
 plot_attention_map="False"
 plot_embeddings="False"
 save_embeddings="False"
+save_predictions="True"
 
 # Pretraining specifications
 pre_batch_size=(128)
@@ -150,14 +151,14 @@ do
                         for smth in "${smoothing[@]}"
                         do
 
-                            folder="ecg/CAD/BarlowTwins/attnPool"
+                            folder="ecg/LV/MM/attnPool"
                             subfolder=("seed$sd/"$model_size"/t"$time_steps"/p"$patch_height"x"$patch_width"/ld"$ld"/dp"$dp"/smth"$smth"/wd"$weight_decay"/m0.8")
 
                             pre_data="b"$pre_batch_size"_blr"$pre_blr
                             # finetune=$checkpoint_base"/sprai/mae_he/mae/output/pre/"$folder"/"$subfolder"/pre_"$pre_data"/checkpoint-399.pth"
                             
                             # # MAE + MMCL
-                            # finetune=$checkpoint_base"/ECGMultimodalContrastiveLearning/oezguen/checkpoints/mm_v230_mae_checkpoint.pth"
+                            finetune=$checkpoint_base"/ECGMultimodalContrastiveLearning/oezguen/checkpoints/mm_v230_mae_checkpoint.pth"
                             
                             # # MMCL only
                             # finetune=$checkpoint_base"/ECGMultimodalContrastiveLearning/oezguen/checkpoints/mm_v283_mae_checkpoint.pth"
@@ -169,7 +170,10 @@ do
                             # finetune=$checkpoint_base"/ECGMultimodalContrastiveLearning/oezguen/checkpoints/ecg/ecg_v204_um_checkpoint.pth"
 
                             # # BarlowTwins
-                            finetune=$checkpoint_base"/ECGMultimodalContrastiveLearning/oezguen/checkpoints/ecg/ecg_v305_um_checkpoint.pth"
+                            # finetune=$checkpoint_base"/ECGMultimodalContrastiveLearning/oezguen/checkpoints/ecg/ecg_v305_um_checkpoint.pth"
+
+                            # # SimCLR
+                            # finetune=$checkpoint_base"/ECGMultimodalContrastiveLearning/oezguen/checkpoints/ecg/ecg_v404_um_checkpoint.pth"
 
                             # # CLOCS
                             # finetune=$checkpoint_base"/ECGMultimodalContrastiveLearning/oezguen/checkpoints/ecg/ecg_v150_mae_checkpoint.pth"
@@ -237,6 +241,10 @@ do
 
                             if [ "$save_embeddings" = "True" ]; then
                                 cmd=$cmd" --embeddings_dir $output_dir"
+                            fi
+
+                            if [ "$save_predictions" = "True" ]; then
+                                cmd=$cmd" --predictions_dir $output_dir"
                             fi
 
                             if [ "$eval" = "True" ]; then

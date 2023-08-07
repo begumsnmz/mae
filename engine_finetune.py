@@ -237,6 +237,7 @@ def evaluate(data_loader, model, device, epoch, log_writer=None, args=None):
     preds = []
     trgts = []
     embeddings = torch.Tensor().to(device=args.device)
+    predictions = torch.Tensor().to(device=args.device)
     # tp, fp, tn, fn = 0, 0, 0, 0
 
     # regression metrics
@@ -269,6 +270,7 @@ def evaluate(data_loader, model, device, epoch, log_writer=None, args=None):
         # print("Output: ", [i.item() for i in torch.argmax(output, dim=1)])
 
         embeddings = torch.cat((embeddings, embedding.detach().clone()), dim=0)
+        predictions = torch.cat((predictions, output.detach().clone()), dim=0)
 
         metric_logger.update(loss=loss.item())
         if args.downstream_task == 'classification':
@@ -311,11 +313,23 @@ def evaluate(data_loader, model, device, epoch, log_writer=None, args=None):
         idx = 1 if args.batch_size > 1 else 0
         plot.plot_attention(images, attention_map, idx)
 
+    if args.predictions_dir:
+        predictions_path = os.path.join(args.predictions_dir, "predictions")
+        if not os.path.exists(predictions_path):
+            os.makedirs(predictions_path)
+        if args.eval:
+            torch.save(predictions.detach().cpu(), os.path.join(predictions_path, f"predictions_test.pt"))
+        else:
+            torch.save(predictions.detach().cpu(), os.path.join(predictions_path, f"predictions_{epoch}.pt"))
+
     if args.embeddings_dir:
         embeddings_path = os.path.join(args.embeddings_dir, "embeddings")
         if not os.path.exists(embeddings_path):
             os.makedirs(embeddings_path)
-        torch.save(embeddings.detach().cpu(), os.path.join(embeddings_path, f"embeddings_{epoch}.pt"))
+        if args.eval:
+            torch.save(embeddings.detach().cpu(), os.path.join(embeddings_path, f"embeddings_test.pt"))
+        else:
+            torch.save(embeddings.detach().cpu(), os.path.join(embeddings_path, f"embeddings_{epoch}.pt"))
 
     # gather the stats from all processes
     metric_logger.synchronize_between_processes()
