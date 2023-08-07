@@ -47,7 +47,7 @@ smoothing=(0.1)
 from_scratch="False"
 
 # Data path
-path="tower"
+path="server"
 if [ "$path" = "tower" ]; then
     data_base="/home/oturgut/sprai/data/preprocessed"
     checkpoint_base="/home/oturgut"
@@ -64,6 +64,10 @@ fi
 # nb_classes="2"
 # data_path=$data_base"/ecg/ecgs_train_diabetes_all_balanced_noBase_gn.pt"
 # labels_path=$data_base"/ecg/labelsOneHot/labels_train_diabetes_all_balanced.pt"
+# downstream_task="classification"
+# nb_classes="2"
+# data_path=$data_base"/ecg/ecgs_train_CAD_all_balanced_noBase_gn.pt"
+# labels_path=$data_base"/ecg/labelsOneHot/labels_train_CAD_all_balanced.pt"
 # downstream_task="classification"
 # nb_classes="2"
 # data_path=$data_base"/ecg/ecgs_train_CAD_hundredth_balanced_noBase_gn.pt"

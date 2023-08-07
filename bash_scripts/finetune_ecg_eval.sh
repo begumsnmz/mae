@@ -34,7 +34,6 @@ ft_surr_phase_noise="0.075"
 
 drop_path=(0.2)
 layer_decay="0.75"
-
 # Optimizer parameters
 blr=(3e-6)
 min_lr="0.0"
