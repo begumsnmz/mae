@@ -7,7 +7,7 @@
 #SBATCH --time=0-23:59:59  # Limit on the total run time (format: days-hours:minutes:seconds)
 #SBATCH --gres=gpu:1  # Number of GPUs if needed
 #SBATCH --cpus-per-task=24  # Number of CPUs (Don't use more than 24 per GPU)
-#SBATCH --mem=42G  # Memory in GB (Don't use more than 126G per GPU)
+#SBATCH --mem=21G  # Memory in GB (Don't use more than 126G per GPU)
 
 # load python module
 module load python/anaconda3
@@ -17,5 +17,5 @@ source /opt/anaconda3/etc/profile.d/conda.sh
 conda deactivate # If you launch your script from a terminal where your environment is already loaded, conda won't activate the environment. This guards against that. Not necessary if you always run this script from a clean terminal
 conda activate mae
 
-cmd="./bash_scripts/finetune_eeg.sh"
+cmd="./bash_scripts/finetune_ecg.sh"
 echo $cmd && $cmd

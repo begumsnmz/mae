@@ -209,6 +209,8 @@ def get_args_parser():
     parser.add_argument('--plot_embeddings', action='store_true', default=False)
     parser.add_argument('--embeddings_dir', default='',
                         help='path where to save embeddings, empty for no saving')
+    parser.add_argument('--predictions_dir', default='',
+                        help='path where to save prediction, empty for no saving')
 
     parser.add_argument('--start_epoch', default=0, type=int, metavar='N',
                         help='start epoch')
