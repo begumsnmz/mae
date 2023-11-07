@@ -15,23 +15,26 @@ import util.augmentations as augmentations
 class SignalDataset(Dataset):
     """Fast EEGDataset (fetching prepared data and labels from files)"""
     def __init__(self, data_path, labels_path=None, labels_mask_path=None, downstream_task=None, 
-                 transform=False, augment=False, args=None) -> None:
+                 train=False, args=None) -> None:
         """load data and labels from files"""
         self.downstream_task = downstream_task
         
-        self.transform = transform
-        self.augment = augment
+        self.train = train 
         
         self.args = args
 
-        self.data = torch.load(data_path, map_location=torch.device('cpu')) # load to ram
+        data = torch.load(data_path, map_location=torch.device('cpu')) # load to ram
+        if self.args.input_size[0] == 1:
+            data = data.unsqueeze(dim=1)
 
-        if labels_path:
+        self.data = data[..., :self.args.input_electrodes, :]
+
+        if labels_path is not None:
             self.labels = torch.load(labels_path, map_location=torch.device('cpu'))#[..., None] # load to ram
         else:
             self.labels = torch.zeros(size=(len(self.data), ))
 
-        if labels_mask_path:
+        if labels_mask_path is not None:
             self.labels_mask = torch.load(labels_mask_path, map_location=torch.device('cpu')) # load to ram
         else:
             self.labels_mask = torch.ones_like(self.labels)
@@ -48,21 +51,14 @@ class SignalDataset(Dataset):
         else:
             data, label, label_mask = self.data[idx], self.labels[idx], self.labels_mask[idx]
         
-        if self.args.input_size[0] == 1:
-            data = data.unsqueeze(dim=0)
-
-        data = data[:, :self.args.input_electrodes, :]
-        
-        if self.transform == True:
+        if self.train == False:
             transform = transforms.Compose([
                 augmentations.CropResizing(fixed_crop_len=self.args.input_size[-1], start_idx=0, resize=False),
                 # transformations.PowerSpectralDensity(fs=100, nperseg=1000, return_onesided=False),
                 # transformations.MinMaxScaling(lower=-1, upper=1, mode="channel_wise")
             ])
-            data = transform(data)
-
-        if self.augment == True:
-            augment = transforms.Compose([
+        else:
+            transform = transforms.Compose([
                 augmentations.CropResizing(fixed_crop_len=self.args.input_size[-1], resize=False),
                 # transformations.PowerSpectralDensity(fs=100, nperseg=1000, return_onesided=False),
                 # transformations.MinMaxScaling(lower=-1, upper=1, mode="channel_wise"),
@@ -72,7 +68,7 @@ class SignalDataset(Dataset):
                 # augmentations.TimeFlip(prob=0.33),
                 # augmentations.SignFlip(prob=0.33)
             ])
-            data = augment(data)
+        data = transform(data)
         
         if self.downstream_task == 'classification':
             label = label.type(torch.LongTensor).argmax(dim=-1)

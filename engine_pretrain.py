@@ -13,6 +13,7 @@ import sys
 from typing import Iterable
 
 import torch
+import torchmetrics
 
 import wandb
 
@@ -159,6 +160,77 @@ def train_one_epoch(model: torch.nn.Module,
 
     return train_stats, training_history
 
+@torch.no_grad()
+def evaluate_online(estimator, model, device, train_dataloader, val_dataloader, args=None):
+    online_history = {}
+    
+    # switch to evaluation mode
+    model.eval()
+
+    # metrics
+    classifier_f1_train = torchmetrics.F1Score(num_classes=args.online_num_classes, threshold=0.5, average=None)
+    classifier_f1_val = torchmetrics.F1Score(num_classes=args.online_num_classes, threshold=0.5, average=None)
+
+    classifier_acc_train = torchmetrics.Accuracy(num_classes=args.online_num_classes, average='weighted')
+    classifier_acc_val = torchmetrics.Accuracy(num_classes=args.online_num_classes, average='weighted')
+
+    classifier_auc_train = torchmetrics.AUROC(num_classes=args.online_num_classes)
+    classifier_auc_val = torchmetrics.AUROC(num_classes=args.online_num_classes)
+
+    # training
+    train_embeddings = []
+    train_labels = []
+    for data, label, _ in train_dataloader:
+        data = data.to(device, non_blocking=True)
+        train_labels.append(label.to(device, non_blocking=True))
+
+        with torch.cuda.amp.autocast():
+            train_embeddings.append(model.forward_encoder_all_patches(data))
+
+    train_embeddings = torch.cat(train_embeddings, dim=0)[:, 0, :] # [cls] token
+    train_embeddings = train_embeddings.cpu()
+    train_labels = torch.cat(train_labels, dim=0)
+    train_labels = train_labels.cpu()
+
+    estimator.fit(train_embeddings, train_labels) # only fit with training data
+
+    train_probs = torch.tensor(estimator.predict_proba(train_embeddings), dtype=torch.float16)
+    
+    classifier_f1_train.to(device='cpu')(train_probs, train_labels)
+    classifier_acc_train.to(device='cpu')(train_probs, train_labels)
+    classifier_auc_train.to(device='cpu')(train_probs, train_labels)
+
+    # validation
+    val_embeddings = []
+    val_labels = []
+    for data, label, _ in val_dataloader:
+        data = data.to(device, non_blocking=True)
+        val_labels.append(label.to(device, non_blocking=True))
+
+        with torch.cuda.amp.autocast():
+            val_embeddings.append(model.forward_encoder_all_patches(data))
+
+    val_embeddings = torch.cat(val_embeddings, dim=0)[:, 0, :] # [cls] token
+    val_embeddings = val_embeddings.cpu()
+    val_labels = torch.cat(val_labels, dim=0)
+    val_labels = val_labels.cpu()
+
+    val_probs = torch.tensor(estimator.predict_proba(val_embeddings), dtype=torch.float16)
+    
+    classifier_f1_val.to(device='cpu')(val_probs, val_labels)
+    classifier_acc_val.to(device='cpu')(val_probs, val_labels)
+    classifier_auc_val.to(device='cpu')(val_probs, val_labels)
+
+    # stats
+    online_history['online/train_f1'] = classifier_f1_train.compute()[1].item() # pos label = 1
+    online_history['online/train_acc'] = classifier_acc_train.compute()
+    online_history['online/train_auc'] = classifier_auc_train.compute()
+
+    online_history['online/val_f1'] = classifier_f1_val.compute()[1].item() # pos label = 1
+    online_history['online/val_acc'] = classifier_acc_val.compute()
+    online_history['online/val_auc'] = classifier_auc_val.compute()
+
+    return online_history
 
 @torch.no_grad()
 def evaluate(data_loader, model, device, epoch, log_writer=None, args=None):

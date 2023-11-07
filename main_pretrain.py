@@ -39,8 +39,9 @@ from util.misc import NativeScalerWithGradNormCount as NativeScaler
 from util.callbacks import EarlyStop
 
 import models_mae
+from sklearn.linear_model import LogisticRegression
 
-from engine_pretrain import train_one_epoch, evaluate
+from engine_pretrain import train_one_epoch, evaluate_online, evaluate
 
 from util.dataset import SignalDataset
 
@@ -118,6 +119,23 @@ def get_args_parser():
                         help='dataset path')
     parser.add_argument('--val_data_path', default='', type=str,
                         help='validation dataset path')
+    
+    parser.add_argument('--online_evaluation', action='store_true', default=False,
+                        help='Perform online evaluation of a downstream task')
+    parser.add_argument('--online_evaluation_task', default='classification', type=str,
+                        help='Online downstream task (default: classification)')
+    parser.add_argument('--online_num_classes', default=2, type=int,
+                        help='Online classification task classes (default: 2)')
+
+    parser.add_argument('--data_path_online', default='_.pt', type=str,
+                        help='dataset path for the online evaluation')
+    parser.add_argument('--labels_path_online', default='_.pt', type=str,
+                        help='labels path for the online evaluation')
+    
+    parser.add_argument('--val_data_path_online', default='', type=str,
+                        help='validation dataset path for the online evaluation')
+    parser.add_argument('--val_labels_path_online', default='', type=str,
+                        help='validation labels path for the online evaluation')
 
     parser.add_argument('--output_dir', default='',
                         help='path where to save, empty for no saving')
@@ -172,8 +190,8 @@ def main(args):
     cudnn.benchmark = True
 
     # load data
-    dataset_train = SignalDataset(data_path=args.data_path, augment=True, args=args)
-    dataset_val = SignalDataset(data_path=args.val_data_path, transform=True, augment=False, args=args)
+    dataset_train = SignalDataset(data_path=args.data_path, train=True, args=args)
+    dataset_val = SignalDataset(data_path=args.val_data_path, train=False, args=args)
 
     print("Training set size: ", len(dataset_train))
     print("Validation set size: ", len(dataset_val))
@@ -221,7 +239,32 @@ def main(args):
         pin_memory=args.pin_mem,
         drop_last=False,
     )
-    
+
+    # online evaluation
+    if args.online_evaluation:
+        dataset_online_train = SignalDataset(data_path=args.data_path_online, labels_path=args.labels_path_online, 
+                                            downstream_task=args.online_evaluation_task, train=True, args=args)
+        dataset_online_val = SignalDataset(data_path=args.val_data_path_online, labels_path=args.val_labels_path_online, 
+                                        downstream_task=args.online_evaluation_task, train=False, args=args)
+
+        data_loader_online_train = torch.utils.data.DataLoader(
+            dataset_online_train, 
+            shuffle=True,
+            batch_size=16,
+            num_workers=args.num_workers,
+            pin_memory=args.pin_mem,
+            drop_last=False,
+        )
+
+        data_loader_online_val = torch.utils.data.DataLoader(
+            dataset_online_val, 
+            shuffle=False,
+            batch_size=16,
+            num_workers=args.num_workers,
+            pin_memory=args.pin_mem,
+            drop_last=False,
+        )
+
     # define the model
     model = models_mae.__dict__[args.model](
         img_size=args.input_size,
@@ -230,7 +273,7 @@ def main(args):
         ncc_weight=args.ncc_weight
     )
 
-    model.to(device)
+    model.to(device, non_blocking=True)
     n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
 
     model_without_ddp = model
@@ -264,10 +307,11 @@ def main(args):
     early_stop = EarlyStop(patience=args.patience, max_delta=args.max_delta)
 
     print(f"Start training for {args.epochs} epochs")
-    start_time = time.time()
+
     eval_criterion = "ncc"
     best_stats = {'loss':np.inf, 'ncc':0.0}
     for epoch in range(args.start_epoch, args.epochs):
+        start_time = time.time()
         if True: #args.distributed:
             data_loader_train.sampler.set_epoch(epoch)
         train_stats, train_history = train_one_epoch(
@@ -283,6 +327,13 @@ def main(args):
 
         val_stats, test_history = evaluate(data_loader_val, model, device, epoch, log_writer=log_writer, args=args)
         print(f"Loss / Normalized CC of the network on the {len(dataset_val)} val images: {val_stats['loss']:.4f} / {val_stats['ncc']:.2f}")
+
+        # online evaluation of the downstream task
+        online_history = {}
+        if args.online_evaluation and epoch % 10 == 0:
+            online_estimator = LogisticRegression(class_weight='balanced', max_iter=2000)
+            online_history = evaluate_online(estimator=online_estimator, model=model, device=device, train_dataloader=data_loader_online_train, 
+                                             val_dataloader=data_loader_online_val, args=args)
 
         if eval_criterion == "loss":
             if early_stop.evaluate_decreasing_metric(val_metric=val_stats[eval_criterion]):
@@ -311,12 +362,13 @@ def main(args):
             with open(os.path.join(args.output_dir, "log.txt"), mode="a", encoding="utf-8") as f:
                 f.write(json.dumps(log_stats) + "\n")
 
+        total_time = time.time() - start_time
+        
         if args.wandb:
-            wandb.log(train_history | test_history)
+            wandb.log(train_history | test_history | online_history | {"Time per epoch [sec]": total_time})
 
-    total_time = time.time() - start_time
-    total_time_str = str(datetime.timedelta(seconds=int(total_time)))
-    print('Training time {}'.format(total_time_str))
+    # total_time_str = str(datetime.timedelta(seconds=int(total_time)))
+    # print('Training time {}'.format(total_time_str))
 
 
 if __name__ == '__main__':

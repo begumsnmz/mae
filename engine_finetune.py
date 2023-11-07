@@ -59,15 +59,15 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
         training_history = {}
     
     # classification metrics
-    metric_acc = torchmetrics.Accuracy(num_classes=args.nb_classes, threshold=0.5, average='weighted').to(device=device)
-    metric_f1 = torchmetrics.F1Score(num_classes=args.nb_classes, threshold=0.5, average=None).to(device=device)
-    metric_auroc = torchmetrics.AUROC(num_classes=args.nb_classes, pos_label=args.pos_label, average='macro').to(device=device)
+    metric_acc = torchmetrics.Accuracy(num_classes=args.nb_classes, threshold=0.5, average='weighted').to(device=device, non_blocking=True)
+    metric_f1 = torchmetrics.F1Score(num_classes=args.nb_classes, threshold=0.5, average=None).to(device=device, non_blocking=True)
+    metric_auroc = torchmetrics.AUROC(num_classes=args.nb_classes, pos_label=args.pos_label, average='macro').to(device=device, non_blocking=True)
     preds = []
     trgts = []
 
     # regression metrics
     metric_rmse = MeanSquaredError(squared=False) #.to(device=device)
-    metric_pcc = MultioutputWrapper(torchmetrics.PearsonCorrCoef(num_outputs=1), num_outputs=args.nb_classes).to(device=args.device)
+    metric_pcc = MultioutputWrapper(torchmetrics.PearsonCorrCoef(num_outputs=1), num_outputs=args.nb_classes).to(device=args.device, non_blocking=True)
 
     for data_iter_step, (samples, targets, targets_mask) in enumerate(metric_logger.log_every(data_loader, print_freq, header)):
 
@@ -231,18 +231,18 @@ def evaluate(data_loader, model, device, epoch, log_writer=None, args=None):
     # switch to evaluation mode
     # classificaiton metrics
     model.eval()
-    metric_acc = torchmetrics.Accuracy(num_classes=args.nb_classes, threshold=0.5, average='weighted').to(device=device)
-    metric_f1 = torchmetrics.F1Score(num_classes=args.nb_classes, threshold=0.5, average=None).to(device=device)
-    metric_auroc = torchmetrics.AUROC(num_classes=args.nb_classes, pos_label=args.pos_label, average='macro').to(device=device)
+    metric_acc = torchmetrics.Accuracy(num_classes=args.nb_classes, threshold=0.5, average='weighted').to(device=device, non_blocking=True)
+    metric_f1 = torchmetrics.F1Score(num_classes=args.nb_classes, threshold=0.5, average=None).to(device=device, non_blocking=True)
+    metric_auroc = torchmetrics.AUROC(num_classes=args.nb_classes, pos_label=args.pos_label, average='macro').to(device=device, non_blocking=True)
     preds = []
     trgts = []
-    embeddings = torch.Tensor().to(device=args.device)
-    predictions = torch.Tensor().to(device=args.device)
+    embeddings = torch.Tensor().to(device=device, non_blocking=True)
+    predictions = torch.Tensor().to(device=device, non_blocking=True)
     # tp, fp, tn, fn = 0, 0, 0, 0
 
     # regression metrics
     metric_rmse = MeanSquaredError(squared=False) #.to(device=device)
-    metric_pcc = MultioutputWrapper(torchmetrics.PearsonCorrCoef(num_outputs=1), num_outputs=args.nb_classes).to(device=args.device)
+    metric_pcc = MultioutputWrapper(torchmetrics.PearsonCorrCoef(num_outputs=1), num_outputs=args.nb_classes).to(device=device, non_blocking=True)
 
     for batch in metric_logger.log_every(data_loader, 10, header):
         images = batch[0]

@@ -281,9 +281,9 @@ def main(args):
     cudnn.benchmark = True
     
     dataset_train = SignalDataset(data_path=args.data_path, labels_path=args.labels_path, labels_mask_path=args.labels_mask_path,
-                                  downstream_task=args.downstream_task, augment=True, args=args)
+                                  downstream_task=args.downstream_task, train=True, args=args)
     dataset_val = SignalDataset(data_path=args.val_data_path, labels_path=args.val_labels_path, labels_mask_path=args.val_labels_mask_path, 
-                                downstream_task=args.downstream_task, transform=True, augment=False, args=args)
+                                downstream_task=args.downstream_task, train=False, args=args)
 
     # train balanced
     class_weights = 2.0 / (2.0 * torch.Tensor([1.0, 1.0])) # total_nb_samples / (nb_classes * samples_per_class)
@@ -411,7 +411,7 @@ def main(args):
     # for _, p in model.head.named_parameters():
     #     p.requires_grad = True
     
-    model.to(device)
+    model.to(device, non_blocking=True)
 
     model_without_ddp = model
     n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -442,7 +442,7 @@ def main(args):
     optimizer = torch.optim.AdamW(param_groups, lr=args.lr)
     loss_scaler = NativeScaler()
 
-    class_weights = class_weights.to(device=device)
+    class_weights = class_weights.to(device=device, non_blocking=True)
     if args.downstream_task == 'regression':
         criterion = torch.nn.MSELoss()
     elif mixup_fn is not None:

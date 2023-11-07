@@ -97,8 +97,8 @@ class MaskedAutoencoderViT(nn.Module):
 
     def patchify(self, imgs):
         """
-        imgs: (N, 5, H, W)
-        x: (N, L, p*q*5)
+        imgs: (N, C, H, W)
+        x: (N, L, p*q*C)
         """
         p, q = self.patch_embed.patch_size
         assert imgs.shape[2] % p == 0 and imgs.shape[3] % q == 0
@@ -112,8 +112,8 @@ class MaskedAutoencoderViT(nn.Module):
 
     def unpatchify(self, x):
         """
-        x: (N, L, p*q*5)
-        imgs: (N, 5, H, W)
+        x: (N, L, p*q*C)
+        imgs: (N, C, H, W)
         """
         p, q = self.patch_embed.patch_size
         h, w = self.patch_embed.grid_size
@@ -176,6 +176,25 @@ class MaskedAutoencoderViT(nn.Module):
 
         return x, mask, ids_restore
 
+    def forward_encoder_all_patches(self, x):
+        # embed patches
+        x = self.patch_embed(x)
+
+        # add pos embed w/o cls token
+        x = x + self.pos_embed[:, 1:, :]
+
+        # append cls token
+        cls_token = self.cls_token + self.pos_embed[:, :1, :]
+        cls_tokens = cls_token.expand(x.shape[0], -1, -1)
+        x = torch.cat((cls_tokens, x), dim=1)
+
+        # apply Transformer blocks
+        for blk in self.blocks:
+            x = blk(x)
+        latent = self.norm(x)
+
+        return latent
+
     def forward_decoder(self, x, ids_restore):
         # embed tokens
         x = self.decoder_embed(x)
@@ -204,11 +223,11 @@ class MaskedAutoencoderViT(nn.Module):
 
     def forward_loss(self, imgs, pred, mask):
         """
-        imgs: [N, 5, H, W]
-        pred: [N, L, p*q*5]
+        imgs: [N, C, H, W]
+        pred: [N, L, p*q*C]
         mask: [N, L], 0 is keep, 1 is remove
         """
-        target = self.patchify(imgs) # [N, L, p*q*5]
+        target = self.patchify(imgs) # [N, L, p*q*C]
         if self.norm_pix_loss:
             mean = target.mean(dim=-1, keepdim=True)
             var = target.var(dim=-1, keepdim=True)
@@ -248,7 +267,7 @@ class MaskedAutoencoderViT(nn.Module):
         cross_corrs = (1.0 / (imgs.shape[-1]-1)) * torch.sum(target_normalized * pred_normalized, dim=-1)
         ncc = cross_corrs.sum() / nb_of_signals
 
-        loss = loss.mean()
+        loss = loss.sum() / (torch.numel(loss) + 1e-5)
 
         # return (1-self.ncc_weight)*loss_patches + self.ncc_weight*(1-ncc)
         return (1-self.ncc_weight)*loss + self.ncc_weight*(1-ncc)
@@ -256,7 +275,7 @@ class MaskedAutoencoderViT(nn.Module):
 
     def forward(self, imgs, mask_ratio=0.75):
         latent, mask, ids_restore = self.forward_encoder(imgs, mask_ratio)
-        pred = self.forward_decoder(latent, ids_restore)  # [N, L, p*q*5]
+        pred = self.forward_decoder(latent, ids_restore)  # [N, L, p*q*C]
         loss = self.forward_loss(imgs, pred, mask)
 
         orig_patched = self.patchify(imgs)
