@@ -13,7 +13,9 @@ import util.augmentations as augmentations
 
 
 class SignalDataset(Dataset):
-    """Fast EEGDataset (fetching prepared data and labels from files)"""
+    """
+    Unimodal dataset that generates views of signals.
+    """
     def __init__(self, data_path, labels_path=None, labels_mask_path=None, downstream_task=None, 
                  train=False, args=None) -> None:
         """load data and labels from files"""
@@ -45,7 +47,6 @@ class SignalDataset(Dataset):
 
     def __getitem__(self, idx) -> Tuple[Any, Any]:
         """return a sample from the dataset at index idx"""
-
         if self.downstream_task == 'regression':
             data, label, label_mask = self.data[idx], self.labels[idx][..., self.args.lower_bnd:self.args.upper_bnd], self.labels_mask[idx][..., self.args.lower_bnd:self.args.upper_bnd]
         else:

@@ -330,7 +330,7 @@ def main(args):
 
         # online evaluation of the downstream task
         online_history = {}
-        if args.online_evaluation and epoch % 10 == 0:
+        if args.online_evaluation and epoch % 5 == 0:
             online_estimator = LogisticRegression(class_weight='balanced', max_iter=2000)
             online_history = evaluate_online(estimator=online_estimator, model=model, device=device, train_dataloader=data_loader_online_train, 
                                              val_dataloader=data_loader_online_val, args=args)
