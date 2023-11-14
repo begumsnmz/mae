@@ -8,14 +8,12 @@
 # DeiT: https://github.com/facebookresearch/deit
 # BEiT: https://github.com/microsoft/unilm/tree/master/beit
 # --------------------------------------------------------
-
 import os
 import argparse
 
 import json
 from typing import Tuple
 import numpy as np
-
 import time
 from pathlib import Path
 

@@ -8,13 +8,12 @@
 # DeiT: https://github.com/facebookresearch/deit
 # MoCo v3: https://github.com/facebookresearch/moco-v3
 # --------------------------------------------------------
-
+import os
 import argparse
-import datetime
+
 import json
 from typing import Tuple
 import numpy as np
-import os
 import time
 from pathlib import Path
 
