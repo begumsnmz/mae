@@ -20,7 +20,7 @@ import timm.models.vision_transformer
 class VisionTransformer(timm.models.vision_transformer.VisionTransformer):
     """ Vision Transformer with support for global average pooling
     """
-    def __init__(self, global_pool=False, downstream_task='classification', 
+    def __init__(self, global_pool=False, attention_pool=False, 
                  masking_blockwise=False, mask_ratio=0.0, mask_c_ratio=0.0, mask_t_ratio=0.0, **kwargs):
         super(VisionTransformer, self).__init__(**kwargs)
 
@@ -29,17 +29,47 @@ class VisionTransformer(timm.models.vision_transformer.VisionTransformer):
         self.mask_c_ratio = mask_c_ratio
         self.mask_t_ratio = mask_t_ratio
 
-        self.downstream_task = downstream_task
-
-        self.global_pool = global_pool
-        if self.global_pool == 'attention_pool':
-            self.attention_pool = nn.MultiheadAttention(embed_dim=kwargs['embed_dim'], num_heads=kwargs['num_heads'], batch_first=True)
-        if self.global_pool:
+        if global_pool:
+            self.pool = "global_pool" 
+        elif attention_pool:
+            self.pool = "attention_pool"
+            self.attention_pool = nn.MultiheadAttention(embed_dim=kwargs['embed_dim'], 
+                                                        num_heads=kwargs['num_heads'], batch_first=True)
+        else:
+            self.pool = False
+            
+        if self.pool:
             norm_layer = kwargs['norm_layer']
             embed_dim = kwargs['embed_dim']
             self.fc_norm = norm_layer(embed_dim)
 
-            del self.norm  # remove the original norm
+            del self.norm  # remove the original norm        
+        
+        self.blocks[-1].attn.forward = self._attention_forward_wrapper(self.blocks[-1].attn)
+        
+    def _attention_forward_wrapper(self, attn_obj):
+        """
+        Modified version of def forward() of class Attention() in timm.models.vision_transformer
+        """
+        def my_forward(x):
+            B, N, C = x.shape # C = embed_dim
+            # (3, B, Heads, N, head_dim)
+            qkv = attn_obj.qkv(x).reshape(B, N, 3, attn_obj.num_heads, C // attn_obj.num_heads).permute(2, 0, 3, 1, 4)
+            q, k, v = qkv.unbind(0)   # make torchscript happy (cannot use tensor as tuple)
+
+            # (B, Heads, N, N)
+            attn = (q @ k.transpose(-2, -1)) * attn_obj.scale
+            attn = attn.softmax(dim=-1)
+            attn = attn_obj.attn_drop(attn)
+            # (B, Heads, N, N)
+            attn_obj.attn_map = attn # this was added 
+
+            # (B, N, Heads*head_dim)
+            x = (attn @ v).transpose(1, 2).reshape(B, N, C)
+            x = attn_obj.proj(x)
+            x = attn_obj.proj_drop(x)
+            return x
+        return my_forward
 
     def random_masking(self, x, mask_ratio):
         """
@@ -126,16 +156,16 @@ class VisionTransformer(timm.models.vision_transformer.VisionTransformer):
         for blk in self.blocks:
             x = blk(x)
 
-        if self.global_pool == 'attention_pool':
+        if self.pool == "attention_pool":
             q = x[:, 1:, :].mean(dim=1, keepdim=True)
             k = x[:, 1:, :]
             v = x[:, 1:, :]
             x, x_weights = self.attention_pool(q, k, v) # attention pool without cls token
             outcome = self.fc_norm(x.squeeze(dim=1))
-        elif self.global_pool:
+        elif self.pool == "global_pool":
             x = x[:, 1:, :].mean(dim=1)  # global pool without cls token
             outcome = self.fc_norm(x)
-        else:
+        else: # cls token
             x = self.norm(x)
             outcome = x[:, 0]
 
@@ -146,10 +176,7 @@ class VisionTransformer(timm.models.vision_transformer.VisionTransformer):
             x = x[:, self.num_prefix_tokens:].mean(dim=1) if self.global_pool == 'avg' else x[:, :]
         x = self.fc_norm(x)
         
-        if self.downstream_task == 'classification':
-            return x if pre_logits else self.head(x)
-        elif self.downstream_task == 'regression':
-            return x if pre_logits else self.head(x) #.sigmoid()
+        return x if pre_logits else self.head(x)
 
 
 def vit_pluto_patchX(**kwargs):

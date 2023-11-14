@@ -31,12 +31,12 @@ class SignalDataset(Dataset):
 
         self.data = data[..., :self.args.input_electrodes, :]
 
-        if labels_path is not None:
+        if labels_path:
             self.labels = torch.load(labels_path, map_location=torch.device('cpu'))#[..., None] # load to ram
         else:
             self.labels = torch.zeros(size=(len(self.data), ))
 
-        if labels_mask_path is not None:
+        if labels_mask_path:
             self.labels_mask = torch.load(labels_mask_path, map_location=torch.device('cpu')) # load to ram
         else:
             self.labels_mask = torch.ones_like(self.labels)

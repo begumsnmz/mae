@@ -14,13 +14,11 @@ import os
 import math
 import sys
 from typing import Iterable, Optional
-from timm import data
 
 import torch
-import torchmetrics
-from torchmetrics import MultioutputWrapper
 
-import sklearn.metrics
+from sklearn.metrics import roc_auc_score, f1_score, accuracy_score, average_precision_score, mean_squared_error
+from sklearn.feature_selection import r_regression
 
 import wandb
 
@@ -28,15 +26,12 @@ import umap
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
-import seaborn as sns
 
 from timm.data import Mixup
-from timm.utils import accuracy
 
 import util.misc as misc
 import util.lr_sched as lr_sched
 import util.plot as plot
-from util.metrics import MeanSquaredError
 
 
 def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
@@ -56,21 +51,13 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
 
     if log_writer is not None:
         print('log_dir: {}'.format(log_writer.log_dir))
-        training_history = {}
     
-    # classification metrics
-    metric_acc = torchmetrics.Accuracy(num_classes=args.nb_classes, threshold=0.5, average='weighted').to(device=device, non_blocking=True)
-    metric_f1 = torchmetrics.F1Score(num_classes=args.nb_classes, threshold=0.5, average=None).to(device=device, non_blocking=True)
-    metric_auroc = torchmetrics.AUROC(num_classes=args.nb_classes, pos_label=args.pos_label, average='macro').to(device=device, non_blocking=True)
-    preds = []
-    trgts = []
-
-    # regression metrics
-    metric_rmse = MeanSquaredError(squared=False) #.to(device=device)
-    metric_pcc = MultioutputWrapper(torchmetrics.PearsonCorrCoef(num_outputs=1), num_outputs=args.nb_classes).to(device=args.device, non_blocking=True)
+    training_history = {}
+    
+    # required for metrics calculation
+    logits, labels = [], []
 
     for data_iter_step, (samples, targets, targets_mask) in enumerate(metric_logger.log_every(data_loader, print_freq, header)):
-
         # we use a per iteration (instead of per epoch) lr scheduler
         if data_iter_step % accum_iter == 0:
             lr_sched.adjust_learning_rate(optimizer, data_iter_step / len(data_loader) + epoch, args)
@@ -103,29 +90,8 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
         if (data_iter_step + 1) % accum_iter == 0:
             optimizer.zero_grad()
 
-        if args.downstream_task == 'classification':
-            # acc1, acc5 = accuracy(outputs, targets, topk=(1, 5))
-            acc = metric_acc(outputs.argmax(dim=-1), targets)
-            f1 = metric_f1(outputs.argmax(dim=-1), targets)[args.pos_label]
-            auroc = metric_auroc(torch.nn.functional.softmax(outputs, dim=-1)[:, args.pos_label], targets)
-            auprc = sklearn.metrics.average_precision_score(y_true=targets.detach().cpu(), y_score=torch.nn.functional.softmax(outputs.detach().cpu().type(torch.float32), dim=-1)[:, args.pos_label], average='micro', pos_label=args.pos_label)
-            # store the results of each step in a list to calculate the auc globally of the entire epoch
-            [preds.append(elem.item()) for elem in torch.nn.functional.softmax(outputs, dim=-1)[:, args.pos_label]]
-            [trgts.append(elem.item()) for elem in targets]
-
-            batch_size = samples.shape[0]
-            # metric_logger.meters['acc1'].update(acc1.item(), n=batch_size)
-            metric_logger.meters['acc'].update(100*acc.item(), n=batch_size)
-            metric_logger.meters['f1'].update(100*f1.item(), n=batch_size)
-            metric_logger.meters['auroc'].update(100*auroc.item(), n=batch_size)
-            metric_logger.meters['auprc'].update(100*auprc.item(), n=batch_size)
-        elif args.downstream_task == 'regression':
-            rmse = metric_rmse(outputs, targets)
-            pcc = metric_pcc(outputs, targets)
-
-            batch_size = samples.shape[0]
-            metric_logger.meters['rmse'].update(torch.tensor(rmse).mean().item(), n=batch_size)
-            metric_logger.meters['pcc'].update(torch.tensor(pcc).mean().item(), n=batch_size)
+        logits.append(outputs)
+        labels.append(targets)
 
         torch.cuda.synchronize()
 
@@ -144,35 +110,30 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
     metric_logger.synchronize_between_processes()
     print("Averaged stats:", metric_logger)
 
+    logits = torch.cat(logits, dim=0).to(device="cpu", dtype=torch.float32).detach()    # (B, num_classes)
+    probs = torch.nn.functional.softmax(logits, dim=-1)                                 # (B, num_classes)
+    labels = torch.cat(labels, dim=0).to(device="cpu").detach()                         # (B, 1)
+    
     training_stats = {k: meter.global_avg for k, meter in metric_logger.meters.items()}
-
     if args.downstream_task == 'classification':
-        acc = 100*metric_acc.compute()
-        metric_acc.reset()
-        training_stats["acc"] = acc.item()
+        labels_onehot = torch.nn.functional.one_hot(labels, num_classes=-1)                 # (B, num_classes)
+        f1 = 100*f1_score(y_true=labels, y_pred=logits.argmax(dim=-1), pos_label=1)
+        acc = 100*accuracy_score(y_true=labels, y_pred=logits.argmax(dim=-1))
+        auc = 100*roc_auc_score(y_true=labels_onehot, y_score=probs)
+        auprc = 100*average_precision_score(y_true=labels_onehot, y_score=probs, pos_label=1)
 
-        f1 = 100*metric_f1.compute()[args.pos_label] # returns the f1 score
-        metric_f1.reset()
-        training_stats["f1"] = f1.item()
-
-        # reset the auc metric to calculate the auc globally of the entire epoch
-        metric_auroc.reset()
-        metric_auroc(torch.tensor(preds, dtype=torch.float), torch.tensor(trgts, dtype=torch.long))
-        auroc = 100*metric_auroc.compute() # returns the auroc for both classes combined (see average="macro")
-        metric_auroc.reset()
-        training_stats["auroc"] = auroc.item()
-
-        auprc = 100*sklearn.metrics.average_precision_score(y_true=trgts, y_score=preds, average='micro', pos_label=args.pos_label)
-        training_stats["auprc"] = auprc.item()
+        training_stats["f1"] = f1
+        training_stats["acc"] = acc
+        training_stats["auroc"] = auc
+        training_stats["auprc"] = auprc
     elif args.downstream_task == 'regression':
-        rmse = metric_rmse.compute()
-        metric_rmse.reset()
-        training_stats["rmse"] = torch.tensor(rmse).mean().item()
+        rmse = mean_squared_error(logits, labels, multioutput="raw_values", squared=False)
+        training_stats["rmse"] = rmse.mean(axis=-1)
 
-        pcc = metric_pcc.compute()
-        metric_pcc.reset()
-        training_stats["pcc"] = torch.tensor(pcc).mean().item()
+        pcc = np.concatenate([r_regression(logits[:, i].view(-1, 1), labels[:, i]) for i in range(labels.shape[-1])], axis=0)
+        training_stats["pcc"] = pcc.mean(axis=-1)
 
+    # tensorboard
     if log_writer is not None: #and (data_iter_step + 1) % accum_iter == 0:
         #""" We use epoch_1000x as the x-axis in tensorboard.
         #This calibrates different curves when batch size changes.
@@ -182,40 +143,40 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
         log_writer.add_scalar('lr', training_stats["lr"], epoch)
 
         if args.downstream_task == 'classification':
-            # log_writer.add_scalar('perf/train_acc1', training_stats["acc1"], epoch)
-            #log_writer.add_scalar('perf/train_acc5', acc5, epoch)
+            log_writer.add_scalar('perf/train_f1', f1, epoch)
             log_writer.add_scalar('perf/train_acc', acc, epoch)
-            log_writer.add_scalar('perf/train_f1', training_stats["f1"], epoch)
-            log_writer.add_scalar('perf/train_auroc', training_stats["auroc"], epoch)
-            log_writer.add_scalar('perf/train_auprc', training_stats["auprc"], epoch)
+            log_writer.add_scalar('perf/train_auroc', auc, epoch)
+            log_writer.add_scalar('perf/train_auprc', auprc, epoch)
         elif args.downstream_task == 'regression':
             log_writer.add_scalar('perf/train_rmse', training_stats["rmse"], epoch)
             log_writer.add_scalar('perf/train_pcc', training_stats["pcc"], epoch)
 
-        if args.wandb == True:
-            training_history['epoch'] = epoch
-            training_history['loss'] = training_stats["loss"]
-            training_history['lr'] = training_stats["lr"]
-            if args.downstream_task == 'classification':
-                training_history['acc'] = training_stats["acc"]
-                training_history['f1'] = training_stats["f1"]
-                training_history['auroc'] = training_stats["auroc"]
-                training_history['auprc'] = training_stats["auprc"]
-            elif args.downstream_task == 'regression':
-                training_history['rmse'] = training_stats["rmse"]
-                training_history['pcc'] = training_stats["pcc"]
+    # wandb
+    if args.wandb == True:
+        training_history['epoch'] = epoch
+        training_history['loss'] = training_stats["loss"]
+        training_history['lr'] = training_stats["lr"]
+        if args.downstream_task == 'classification':
+            training_history['f1'] = f1
+            training_history['acc'] = acc
+            training_history['auroc'] = auc
+            training_history['auprc'] = auprc
+        elif args.downstream_task == 'regression':
+            training_history['rmse'] = training_stats["rmse"]
+            training_history['pcc'] = training_stats["pcc"]
 
-                for i in range(targets.shape[-1]):
-                    training_history[f'Train/RMSE/{i}'] = torch.tensor(rmse[i]).item()
-                    training_history[f'Train/PCC/{i}'] = pcc[i].item()
-
-            # wandb.log(training_history)
+            for i in range(targets.shape[-1]):
+                training_history[f'Train/RMSE/{i}'] = rmse[i]
+                training_history[f'Train/PCC/{i}'] = pcc[i]
 
     return training_stats, training_history
 
 
 @torch.no_grad()
 def evaluate(data_loader, model, device, epoch, log_writer=None, args=None):
+    # switch to evaluation mode
+    model.eval()
+
     if args.downstream_task == 'classification':
         criterion = torch.nn.CrossEntropyLoss()
     elif args.downstream_task == 'regression':
@@ -226,23 +187,11 @@ def evaluate(data_loader, model, device, epoch, log_writer=None, args=None):
 
     if log_writer is not None:
         print('log_dir: {}'.format(log_writer.log_dir))
-        test_history = {}  
-
-    # switch to evaluation mode
-    # classificaiton metrics
-    model.eval()
-    metric_acc = torchmetrics.Accuracy(num_classes=args.nb_classes, threshold=0.5, average='weighted').to(device=device, non_blocking=True)
-    metric_f1 = torchmetrics.F1Score(num_classes=args.nb_classes, threshold=0.5, average=None).to(device=device, non_blocking=True)
-    metric_auroc = torchmetrics.AUROC(num_classes=args.nb_classes, pos_label=args.pos_label, average='macro').to(device=device, non_blocking=True)
-    preds = []
-    trgts = []
-    embeddings = torch.Tensor().to(device=device, non_blocking=True)
-    predictions = torch.Tensor().to(device=device, non_blocking=True)
-    # tp, fp, tn, fn = 0, 0, 0, 0
-
-    # regression metrics
-    metric_rmse = MeanSquaredError(squared=False) #.to(device=device)
-    metric_pcc = MultioutputWrapper(torchmetrics.PearsonCorrCoef(num_outputs=1), num_outputs=args.nb_classes).to(device=device, non_blocking=True)
+    
+    test_history = {}
+    
+    # required for metrics calculation
+    embeddings, logits, labels = [], [], []
 
     for batch in metric_logger.log_every(data_loader, 10, header):
         images = batch[0]
@@ -258,167 +207,115 @@ def evaluate(data_loader, model, device, epoch, log_writer=None, args=None):
 
         # compute output
         with torch.cuda.amp.autocast():
-            # output = model(images)*target_mask
             embedding = model.forward_features(images)
             output = model.forward_head(embedding)
             output = output*target_mask
             loss = criterion(output, target)
 
-        attention_map = model.blocks[-1].attn.attn_map
-
-        # print("Target: ", [i.item() for i in target])
-        # print("Output: ", [i.item() for i in torch.argmax(output, dim=1)])
-
-        embeddings = torch.cat((embeddings, embedding.detach().clone()), dim=0)
-        predictions = torch.cat((predictions, output.detach().clone()), dim=0)
+        if args.save_embeddings:
+            embeddings.append(embedding)
+        logits.append(output)
+        labels.append(target)
 
         metric_logger.update(loss=loss.item())
-        if args.downstream_task == 'classification':
-            # acc1, acc5 = accuracy(output, target, topk=(1, 5))
-            acc = metric_acc(output.argmax(dim=-1), target)
-            f1 = metric_f1(output.argmax(dim=-1), target)[args.pos_label]
-            auroc = metric_auroc(torch.nn.functional.softmax(output, dim=-1)[:, args.pos_label], target)
-            auprc = sklearn.metrics.average_precision_score(y_true=target.detach().cpu(), y_score=torch.nn.functional.softmax(output.detach().cpu().type(torch.float32), dim=-1)[:, args.pos_label], average='micro', pos_label=args.pos_label)
-            # store the results of each step in a list to calculate the auc globally of the entire epoch
-            [preds.append(elem.item()) for elem in torch.nn.functional.softmax(output, dim=-1)[:, args.pos_label]]
-            [trgts.append(elem.item()) for elem in target]
-
-            # my_target = target
-            # my_predic = torch.argmax(output, dim=1)
-
-            # # if pos_label=1
-            # tp += (my_target * my_predic).sum()
-            # fp += ((1-my_target) * my_predic).sum()
-            # tn += ((1-my_target) * (1-my_predic)).sum()
-            # fn += (my_target * (1-my_predic)).sum()
-
-            # # print(f"TP: {tp}, FP: {fp}, TN: {tn}, FN: {fn}\n")
-
-            batch_size = images.shape[0]
-            # metric_logger.meters['acc1'].update(acc1.item(), n=batch_size)
-            # metric_logger.meters['acc5'].update(acc5.item(), n=batch_size)
-            metric_logger.meters['acc'].update(100*acc.item(), n=batch_size)
-            metric_logger.meters['f1'].update(100*f1.item(), n=batch_size)
-            metric_logger.meters['auroc'].update(100*auroc.item(), n=batch_size)
-            metric_logger.meters['auprc'].update(100*auprc.item(), n=batch_size)
-        if args.downstream_task == 'regression':
-            rmse = metric_rmse(output, target)
-            pcc = metric_pcc(output, target)
-
-            batch_size = images.shape[0]
-            metric_logger.meters['rmse'].update(torch.tensor(rmse).mean().item(), n=batch_size)
-            metric_logger.meters['pcc'].update(torch.tensor(pcc).mean().item(), n=batch_size)
 
     if args.wandb and args.plot_attention_map:
+        attention_map = model.blocks[-1].attn.attn_map
         idx = 1 if args.batch_size > 1 else 0
         plot.plot_attention(images, attention_map, idx)
 
-    if args.predictions_dir:
-        predictions_path = os.path.join(args.predictions_dir, "predictions")
-        if not os.path.exists(predictions_path):
-            os.makedirs(predictions_path)
-        if args.eval:
-            torch.save(predictions.detach().cpu(), os.path.join(predictions_path, f"predictions_test.pt"))
-        else:
-            torch.save(predictions.detach().cpu(), os.path.join(predictions_path, f"predictions_{epoch}.pt"))
-
-    if args.embeddings_dir:
-        embeddings_path = os.path.join(args.embeddings_dir, "embeddings")
+    if args.save_embeddings:
+        embeddings = torch.cat(embeddings, dim=0).to(device="cpu", dtype=torch.float32).detach() # (B, D)
+        embeddings_path = os.path.join(args.output_dir, "embeddings")
         if not os.path.exists(embeddings_path):
             os.makedirs(embeddings_path)
-        if args.eval:
-            torch.save(embeddings.detach().cpu(), os.path.join(embeddings_path, f"embeddings_test.pt"))
-        else:
-            torch.save(embeddings.detach().cpu(), os.path.join(embeddings_path, f"embeddings_{epoch}.pt"))
+        
+        file_name = f"embeddings_test.pt" if args.eval else f"embeddings_{epoch}.pt"
+        torch.save(embeddings, os.path.join(embeddings_path, file_name))
+
+    if args.save_logits:
+        logits_path = os.path.join(args.output_dir, "logits")
+        if not os.path.exists(logits_path):
+            os.makedirs(logits_path)
+        
+        file_name = f"logits_test.pt" if args.eval else f"logits_{epoch}.pt"
+        torch.save(logits, os.path.join(logits_path, file_name))
 
     # gather the stats from all processes
     metric_logger.synchronize_between_processes()
 
+    logits = torch.cat(logits, dim=0).to(device="cpu", dtype=torch.float32).detach()    # (B, num_classes)
+    probs = torch.nn.functional.softmax(logits, dim=-1)                                 # (B, num_classes)
+    labels = torch.cat(labels, dim=0).to(device="cpu").detach()                         # (B, 1)
+
     test_stats = {k: meter.global_avg for k, meter in metric_logger.meters.items()}
-
     if args.downstream_task == 'classification':
-        acc = 100*metric_acc.compute()
-        metric_acc.reset()
-        test_stats["acc"] = acc.item()
-
-        f1 = 100*metric_f1.compute()[args.pos_label] # returns the f1 score
-        metric_f1.reset()
-        test_stats["f1"] = f1.item()
-
-        # reset the auc metric to calculate the auc globally of the entire epoch
-        metric_auroc.reset()
-        metric_auroc(torch.tensor(preds, dtype=torch.float), torch.tensor(trgts, dtype=torch.long))
-        auroc = 100*metric_auroc.compute() # returns the auroc for both classes combined (see average="macro")
-        metric_auroc.reset()
-        test_stats["auroc"] = auroc.item()
-
-        auprc = 100*sklearn.metrics.average_precision_score(y_true=trgts, y_score=preds, average='micro', pos_label=args.pos_label)
-        test_stats["auprc"] = auprc.item()
+        labels_onehot = torch.nn.functional.one_hot(labels, num_classes=-1)                 # (B, num_classes)
+        f1 = 100*f1_score(y_true=labels, y_pred=logits.argmax(dim=-1), pos_label=1)
+        acc = 100*accuracy_score(y_true=labels, y_pred=logits.argmax(dim=-1))
+        auc = 100*roc_auc_score(y_true=labels_onehot, y_score=probs)
+        auprc = 100*average_precision_score(y_true=labels_onehot, y_score=probs, pos_label=1)
+        
+        test_stats["f1"] = f1
+        test_stats["acc"] = acc
+        test_stats["auroc"] = auc
+        test_stats["auprc"] = auprc
     elif args.downstream_task == 'regression':
-        rmse = metric_rmse.compute()
-        metric_rmse.reset()
-        test_stats["rmse"] = torch.tensor(rmse).mean().item()
+        rmse = mean_squared_error(logits, labels, multioutput="raw_values", squared=False)
+        test_stats["rmse"] = rmse.mean(axis=-1)
 
-        pcc = metric_pcc.compute()
-        metric_pcc.reset()
-        test_stats["pcc"] = torch.tensor(pcc).mean().item()
+        pcc = np.concatenate([r_regression(logits[:, i].view(-1, 1), labels[:, i]) for i in range(labels.shape[-1])], axis=0)
+        test_stats["pcc"] = pcc.mean(axis=-1)
 
     if args.downstream_task == 'classification':
-        print('* Acc@1 {top1.global_avg:.3f} F1 {f1:.3f} AUROC {auroc:.3f} AUPRC {auprc:.3f} loss {losses:.3f}'
-            .format(top1=metric_logger.acc, f1=test_stats["f1"], auroc=test_stats["auroc"], auprc=test_stats["auprc"], losses=test_stats["loss"]))
+        print('* Acc@1 {top1_acc:.3f} F1 {f1:.3f} AUROC {auroc:.3f} AUPRC {auprc:.3f} loss {losses:.3f}'
+            .format(top1_acc=acc, f1=f1, auroc=auc, auprc=auprc, losses=test_stats["loss"]))
     elif args.downstream_task == 'regression':
         print('* RMSE {rmse:.3f} PCC {pcc:.2f} loss {losses:.3f}'
             .format(rmse=test_stats["rmse"], pcc=test_stats["pcc"], losses=test_stats["loss"]))
 
+    # tensorboard
     if log_writer is not None:
         if args.downstream_task == 'classification':
-            # log_writer.add_scalar('perf/test_acc1', test_stats['acc1'], epoch)
-            #log_writer.add_scalar('perf/test_acc5', test_stats['acc5'], epoch)
-            log_writer.add_scalar('perf/test_acc', test_stats['acc'], epoch)
-            log_writer.add_scalar('perf/test_f1', test_stats['f1'], epoch)
-            log_writer.add_scalar('perf/test_auroc', test_stats['auroc'], epoch)
-            log_writer.add_scalar('perf/test_auprc', test_stats['auprc'], epoch)
+            log_writer.add_scalar('perf/test_f1', f1, epoch)
+            log_writer.add_scalar('perf/test_acc', acc, epoch)
+            log_writer.add_scalar('perf/test_auroc', auc, epoch)
+            log_writer.add_scalar('perf/test_auprc', auprc, epoch)
         elif args.downstream_task == 'regression':
             log_writer.add_scalar('perf/test_rmse', test_stats['rmse'], epoch)
             log_writer.add_scalar('perf/test_pcc', test_stats['pcc'], epoch)
         log_writer.add_scalar('perf/test_loss', test_stats['loss'], epoch)
 
-        if args.wandb == True:
-            test_history = {'epoch' : epoch,
-                                'test_loss' : test_stats['loss']}
-            if args.downstream_task == 'classification':
-                # test_history['test_acc1'] = test_stats['acc1']
-                # test_history['test_acc5'] = test_stats['acc5']
-                test_history['test_acc'] = test_stats['acc']
-                test_history['test_f1'] = test_stats['f1']
-                test_history['test_auroc'] = test_stats['auroc']
-                test_history['test_auprc'] = test_stats['auprc']
-            elif args.downstream_task == 'regression':
-                test_history['test_rmse'] = test_stats['rmse']
-                test_history['test_pcc'] = test_stats['pcc']
+    # wandb
+    if args.wandb == True:
+        test_history = {'epoch' : epoch, 'test_loss' : test_stats['loss']}
+        if args.downstream_task == 'classification':
+            test_history['test_acc'] = acc
+            test_history['test_f1'] = f1
+            test_history['test_auroc'] = auc
+            test_history['test_auprc'] = auprc
+        elif args.downstream_task == 'regression':
+            test_history['test_rmse'] = test_stats['rmse']
+            test_history['test_pcc'] = test_stats['pcc']
 
-                for i in range(target.shape[-1]):
-                    test_history[f'Test/RMSE/{i}'] = torch.tensor(rmse[i]).item()
-                    test_history[f'Test/PCC/{i}'] = pcc[i].item()
+            for i in range(target.shape[-1]):
+                test_history[f'Test/RMSE/{i}'] = rmse[i]
+                test_history[f'Test/PCC/{i}'] = pcc[i]
 
-            if args.plot_embeddings and epoch % 10 == 0:
-                reducer = umap.UMAP(n_components=2, metric='euclidean')
-                umap_proj = reducer.fit_transform(embeddings.cpu())
-                
-                cmap = matplotlib.cm.get_cmap('tab20') # for the colours
+        if args.plot_embeddings and epoch % 10 == 0:
+            reducer = umap.UMAP(n_components=2, metric='euclidean')
+            umap_proj = reducer.fit_transform(embeddings)
+            
+            fig, ax = plt.subplots(figsize=(8, 8))
 
-                # plt.figure()
-                fig, ax = plt.subplots(figsize=(8, 8))
+            cmap = matplotlib.cm.get_cmap('tab20') # for the colours
+            for label in range(args.nb_classes):
+                indices = labels.numpy()==label
+                ax.scatter(umap_proj[indices, 0], umap_proj[indices, 1], c=np.array(cmap(label*3)).reshape(1, 4), label=label, alpha=0.5)
 
-                for label in range(args.nb_classes):
-                    indices = np.array(trgts)==label
-                    ax.scatter(umap_proj[indices, 0], umap_proj[indices, 1], c=np.array(cmap(label*3)).reshape(1, 4), label=label, alpha=0.5)
+            ax.legend(fontsize='large', markerscale=2)
 
-                ax.legend(fontsize='large', markerscale=2)
-
-                test_history["UMAP Embeddings"] = wandb.Image(fig)
-                plt.close('all')
-
-            # wandb.log(test_history)
+            test_history["UMAP Embeddings"] = wandb.Image(fig)
+            plt.close('all')
     
     return test_stats, test_history

@@ -17,19 +17,10 @@ import os
 import time
 from pathlib import Path
 
-import sys
-
 import torch
-from torch.utils.data import Subset, ConcatDataset
 import torch.backends.cudnn as cudnn
-from torch.utils.tensorboard import SummaryWriter
+# from torch.utils.tensorboard import SummaryWriter
 import wandb
-
-import torchvision.transforms as transforms
-import torchvision.datasets as datasets
-
-# sys.path.append("..")
-import timm
 
 # assert timm.__version__ == "0.3.2"  # version check
 import timm.optim.optim_factory as optim_factory
@@ -139,8 +130,8 @@ def get_args_parser():
 
     parser.add_argument('--output_dir', default='',
                         help='path where to save, empty for no saving')
-    parser.add_argument('--log_dir', default='./output_dir',
-                        help='path where to tensorboard log')
+    parser.add_argument('--log_dir', default='',
+                        help='path where to tensorboard log (default: ./logs)')
     parser.add_argument('--wandb', action='store_true', default=False)
     parser.add_argument('--wandb_project', default='',
                         help='project where to wandb log')
@@ -207,18 +198,20 @@ def main(args):
     else:
         sampler_train = torch.utils.data.RandomSampler(dataset_train)
 
-    if global_rank == 0 and args.log_dir is not None:
+    # tensorboard logging
+    if False: #global_rank == 0 and args.log_dir:
         os.makedirs(args.log_dir, exist_ok=True)
         log_writer = SummaryWriter(log_dir=args.log_dir)
-
-        if args.wandb == True:
-            config = vars(args)
-            if args.wandb_id:
-                wandb.init(project=args.wandb_project, id=args.wandb_id, config=config, entity="oturgut")
-            else:
-                wandb.init(project=args.wandb_project, config=config, entity="oturgut")
     else:
         log_writer = None
+
+    # wandb logging
+    if args.wandb == True:
+        config = vars(args)
+        if args.wandb_id:
+            wandb.init(project=args.wandb_project, id=args.wandb_id, config=config, entity="oturgut")
+        else:
+            wandb.init(project=args.wandb_project, config=config, entity="oturgut")
 
     data_loader_train = torch.utils.data.DataLoader(
         dataset_train, 
@@ -312,14 +305,12 @@ def main(args):
     best_stats = {'loss':np.inf, 'ncc':0.0}
     for epoch in range(args.start_epoch, args.epochs):
         start_time = time.time()
+
         if True: #args.distributed:
             data_loader_train.sampler.set_epoch(epoch)
-        train_stats, train_history = train_one_epoch(
-            model, data_loader_train,
-            optimizer, device, epoch, loss_scaler,
-            log_writer=log_writer,
-            args=args
-        )
+
+        train_stats, train_history = train_one_epoch(model, data_loader_train, optimizer, device, epoch, loss_scaler,
+                                                     log_writer=log_writer, args=args)
         # if args.output_dir and (epoch % 100 == 0 or epoch + 1 == args.epochs):
         #     misc.save_model(
         #         args=args, model=model, model_without_ddp=model_without_ddp, optimizer=optimizer,
@@ -357,18 +348,14 @@ def main(args):
                         'epoch': epoch,}
 
         if args.output_dir and misc.is_main_process():
-            if log_writer is not None:
+            if log_writer:
                 log_writer.flush()
             with open(os.path.join(args.output_dir, "log.txt"), mode="a", encoding="utf-8") as f:
                 f.write(json.dumps(log_stats) + "\n")
 
         total_time = time.time() - start_time
-        
         if args.wandb:
             wandb.log(train_history | test_history | online_history | {"Time per epoch [sec]": total_time})
-
-    # total_time_str = str(datetime.timedelta(seconds=int(total_time)))
-    # print('Training time {}'.format(total_time_str))
 
 
 if __name__ == '__main__':

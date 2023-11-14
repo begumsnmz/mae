@@ -13,7 +13,6 @@ import sys
 from typing import Iterable
 
 import torch
-import torchmetrics
 
 import wandb
 
@@ -21,6 +20,8 @@ import util.misc as misc
 import util.lr_sched as lr_sched
 
 import matplotlib.pyplot as plt
+
+from sklearn.metrics import roc_auc_score, f1_score, accuracy_score
 
 
 def norm(data:torch.Tensor()) -> torch.Tensor():
@@ -73,7 +74,8 @@ def train_one_epoch(model: torch.nn.Module,
 
     if log_writer is not None:
         print('log_dir: {}'.format(log_writer.log_dir))
-        training_history = {}
+
+    training_history = {}
 
     for data_iter_step, (samples, _, _) in enumerate(metric_logger.log_every(data_loader, print_freq, header)):
 
@@ -117,66 +119,56 @@ def train_one_epoch(model: torch.nn.Module,
 
     train_stats = {k: meter.global_avg for k, meter in metric_logger.meters.items()}
 
+    # tensorboard
     if log_writer is not None:
         log_writer.add_scalar('train/train_loss', train_stats["loss"], epoch)
         log_writer.add_scalar('lr', train_stats["lr"], epoch)
         log_writer.add_scalar('train/normalized_corr_coef', train_stats["ncc"], epoch)
 
-        if args.wandb == True:
-            training_history['epoch'] = epoch
-            training_history['train_loss'] = train_stats["loss"]
-            training_history['lr'] = train_stats["lr"]
-            training_history['Normalized Correlation Coefficient'] = train_stats["ncc"]
+    # wandb
+    if args.wandb == True:
+        training_history['epoch'] = epoch
+        training_history['train_loss'] = train_stats["loss"]
+        training_history['lr'] = train_stats["lr"]
+        training_history['Normalized Correlation Coefficient'] = train_stats["ncc"]
 
-            if (epoch % 10) == 0:
-                steps = 1
-                x = samples[0, ..., ::steps].detach().cpu().numpy()
-                x_hat = samples_hat[0, ..., ::steps].detach().cpu().numpy()
-                x_hat_masked = samples_hat_masked[0, ..., ::steps].detach().cpu().numpy()
+        if (epoch % 10) == 0:
+            steps = 1
+            x = samples[0, ..., ::steps].detach().cpu().numpy()
+            x_hat = samples_hat[0, ..., ::steps].detach().cpu().numpy()
+            x_hat_masked = samples_hat_masked[0, ..., ::steps].detach().cpu().numpy()
 
-                # samples of shape (Batch, Freq, Channel, Time)
-                if samples.shape[1] > 1:
-                    f_bin = 2
-                else:
-                    f_bin = 0
+            # samples of shape (Batch, Freq, Channel, Time)
+            if samples.shape[1] > 1:
+                f_bin = 2
+            else:
+                f_bin = 0
 
-                plt.close('all')
-                plt.subplot(611)
-                plt.plot(range(0, x.shape[-1], 1), x[0, 0, :])
-                plt.subplot(612)
-                plt.plot(range(0, x.shape[-1], 1), x_hat[0, 0, :])
-                plt.subplot(613)
-                plt.plot(range(0, x.shape[-1], 1), x_hat_masked[0, 0, :])
-                plt.subplot(614)
-                plt.plot(range(0, x.shape[-1], 1), x[f_bin, 5, :])
-                plt.subplot(615)
-                plt.plot(range(0, x.shape[-1], 1), x_hat[f_bin, 5, :])
-                plt.subplot(616)
-                plt.plot(range(0, x.shape[-1], 1), x_hat_masked[f_bin, 5, :])
-                plt.tight_layout()
-                training_history["Reconstruction"] = wandb.Image(plt)
-
-            # wandb.log(training_history)
+            plt.close('all')
+            plt.subplot(611)
+            plt.plot(range(0, x.shape[-1], 1), x[0, 0, :])
+            plt.subplot(612)
+            plt.plot(range(0, x.shape[-1], 1), x_hat[0, 0, :])
+            plt.subplot(613)
+            plt.plot(range(0, x.shape[-1], 1), x_hat_masked[0, 0, :])
+            plt.subplot(614)
+            plt.plot(range(0, x.shape[-1], 1), x[f_bin, 5, :])
+            plt.subplot(615)
+            plt.plot(range(0, x.shape[-1], 1), x_hat[f_bin, 5, :])
+            plt.subplot(616)
+            plt.plot(range(0, x.shape[-1], 1), x_hat_masked[f_bin, 5, :])
+            plt.tight_layout()
+            training_history["Reconstruction"] = wandb.Image(plt)
 
     return train_stats, training_history
 
 @torch.no_grad()
 def evaluate_online(estimator, model, device, train_dataloader, val_dataloader, args=None):
-    online_history = {}
-    
     # switch to evaluation mode
     model.eval()
 
-    # metrics
-    classifier_f1_train = torchmetrics.F1Score(num_classes=args.online_num_classes, threshold=0.5, average=None)
-    classifier_f1_val = torchmetrics.F1Score(num_classes=args.online_num_classes, threshold=0.5, average=None)
-
-    classifier_acc_train = torchmetrics.Accuracy(num_classes=args.online_num_classes, average='weighted')
-    classifier_acc_val = torchmetrics.Accuracy(num_classes=args.online_num_classes, average='weighted')
-
-    classifier_auc_train = torchmetrics.AUROC(num_classes=args.online_num_classes)
-    classifier_auc_val = torchmetrics.AUROC(num_classes=args.online_num_classes)
-
+    online_history = {}
+    
     # training
     train_embeddings = []
     train_labels = []
@@ -196,9 +188,9 @@ def evaluate_online(estimator, model, device, train_dataloader, val_dataloader, 
 
     train_probs = torch.tensor(estimator.predict_proba(train_embeddings), dtype=torch.float16)
     
-    classifier_f1_train.to(device='cpu')(train_probs, train_labels)
-    classifier_acc_train.to(device='cpu')(train_probs, train_labels)
-    classifier_auc_train.to(device='cpu')(train_probs, train_labels)
+    classifier_f1_train = f1_score(y_true=train_labels, y_pred=train_probs.argmax(dim=-1), pos_label=1)
+    classifier_acc_train = accuracy_score(y_true=train_labels, y_pred=train_probs.argmax(dim=-1))
+    classifier_auc_train = roc_auc_score(y_true=torch.nn.functional.one_hot(train_labels, num_classes=-1), y_score=train_probs)
 
     # validation
     val_embeddings = []
@@ -217,32 +209,33 @@ def evaluate_online(estimator, model, device, train_dataloader, val_dataloader, 
 
     val_probs = torch.tensor(estimator.predict_proba(val_embeddings), dtype=torch.float16)
     
-    classifier_f1_val.to(device='cpu')(val_probs, val_labels)
-    classifier_acc_val.to(device='cpu')(val_probs, val_labels)
-    classifier_auc_val.to(device='cpu')(val_probs, val_labels)
+    classifier_f1_val = f1_score(y_true=val_labels, y_pred=val_probs.argmax(dim=-1), pos_label=1)
+    classifier_acc_val = accuracy_score(y_true=val_labels, y_pred=val_probs.argmax(dim=-1))
+    classifier_auc_val = roc_auc_score(y_true=torch.nn.functional.one_hot(val_labels, num_classes=-1), y_score=val_probs)
 
     # stats
-    online_history['online/train_f1'] = classifier_f1_train.compute()[1].item() # pos label = 1
-    online_history['online/train_acc'] = classifier_acc_train.compute()
-    online_history['online/train_auc'] = classifier_auc_train.compute()
+    online_history['online/train_f1'] = classifier_f1_train
+    online_history['online/train_acc'] = classifier_acc_train
+    online_history['online/train_auc'] = classifier_auc_train
 
-    online_history['online/val_f1'] = classifier_f1_val.compute()[1].item() # pos label = 1
-    online_history['online/val_acc'] = classifier_acc_val.compute()
-    online_history['online/val_auc'] = classifier_auc_val.compute()
+    online_history['online/val_f1'] = classifier_f1_val
+    online_history['online/val_acc'] = classifier_acc_val
+    online_history['online/val_auc'] = classifier_auc_val
 
     return online_history
 
 @torch.no_grad()
 def evaluate(data_loader, model, device, epoch, log_writer=None, args=None):
+    # switch to evaluation mode
+    model.eval()
+
     metric_logger = misc.MetricLogger(delimiter="  ")
     header = 'Test:'
 
     if log_writer is not None:
         print('log_dir: {}'.format(log_writer.log_dir))
-        test_history = {}  
-
-    # switch to evaluation mode
-    model.eval()
+    
+    test_history = {}  
 
     for batch in metric_logger.log_every(data_loader, 10, header):
         samples = batch[0]
@@ -266,44 +259,15 @@ def evaluate(data_loader, model, device, epoch, log_writer=None, args=None):
 
     test_stats = {k: meter.global_avg for k, meter in metric_logger.meters.items()}
 
-    # log evaluation results
+    # tensorboard
     if log_writer is not None:
         log_writer.add_scalar('val/val_loss', test_stats["loss"], epoch)
         log_writer.add_scalar('val/val_normalized_corr_coef', test_stats["ncc"], epoch)
 
-        if args.wandb == True:
-            test_history['epoch'] = epoch
-            test_history['val_loss'] = test_stats["loss"]
-            test_history['Val Normalized Correlation Coefficient'] = test_stats["ncc"]
-
-            # if (epoch % 1) == 0:
-            #     steps = 5
-            #     x = samples[0, ..., ::steps].detach().cpu().numpy()
-            #     x_hat = samples_hat[0, ..., ::steps].detach().cpu().numpy()
-            #     x_hat_masked = samples_hat_masked[0, ..., ::steps].detach().cpu().numpy()
-
-            #     # samples of shape (Batch, Freq, Channel, Time)
-            #     if samples.shape[1] > 1:
-            #         f_bin = 2
-            #     else:
-            #         f_bin = 0
-
-            #     plt.close('all')
-            #     plt.subplot(611)
-            #     plt.plot(range(0, x.shape[-1], 1), x[0, 0, :])
-            #     plt.subplot(612)
-            #     plt.plot(range(0, x.shape[-1], 1), x_hat[0, 0, :])
-            #     plt.subplot(613)
-            #     plt.plot(range(0, x.shape[-1], 1), x_hat_masked[0, 0, :])
-            #     plt.subplot(614)
-            #     plt.plot(range(0, x.shape[-1], 1), x[f_bin, 5, :])
-            #     plt.subplot(615)
-            #     plt.plot(range(0, x.shape[-1], 1), x_hat[f_bin, 5, :])
-            #     plt.subplot(616)
-            #     plt.plot(range(0, x.shape[-1], 1), x_hat_masked[f_bin, 5, :])
-            #     plt.tight_layout()
-            #     training_history["Val reconstruction"] = wandb.Image(plt)
-
-            # wandb.log(test_history)
+    # wandb
+    if args.wandb == True:
+        test_history['epoch'] = epoch
+        test_history['val_loss'] = test_stats["loss"]
+        test_history['Val Normalized Correlation Coefficient'] = test_stats["ncc"]
 
     return test_stats, test_history

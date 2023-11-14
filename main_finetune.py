@@ -9,31 +9,29 @@
 # BEiT: https://github.com/microsoft/unilm/tree/master/beit
 # --------------------------------------------------------
 
+import os
 import argparse
-import datetime
+
 import json
 from typing import Tuple
 import numpy as np
-import os
+
 import time
 from pathlib import Path
 
 import torch
-from torch.utils.data import Subset, ConcatDataset
 import torch.backends.cudnn as cudnn
-from torch.utils.tensorboard import SummaryWriter
+# from torch.utils.tensorboard import SummaryWriter
 import wandb
-
-import timm
 
 # assert timm.__version__ == "0.3.2" # version check
 from timm.models.layers import trunc_normal_
 from timm.data.mixup import Mixup
 from timm.loss import LabelSmoothingCrossEntropy, SoftTargetCrossEntropy
 
+from util.dataset import SignalDataset
 import util.lr_decay as lrd
 import util.misc as misc
-from util.datasets import build_dataset
 from util.pos_embed import interpolate_pos_embed
 from util.misc import NativeScalerWithGradNormCount as NativeScaler
 from util.callbacks import EarlyStop
@@ -41,8 +39,6 @@ from util.callbacks import EarlyStop
 import models_vit
 
 from engine_finetune import train_one_epoch, evaluate
-
-from util.dataset import SignalDataset
 
 
 def get_args_parser():
@@ -192,8 +188,8 @@ def get_args_parser():
 
     parser.add_argument('--output_dir', default='',
                         help='path where to save, empty for no saving')
-    parser.add_argument('--log_dir', default='./logs',
-                        help='path where to tensorboard log')
+    parser.add_argument('--log_dir', default='',
+                        help='path where to tensorboard log (default: ./logs)')
     parser.add_argument('--wandb', action='store_true', default=False)
     parser.add_argument('--wandb_project', default='',
                         help='project where to wandb log')
@@ -207,10 +203,10 @@ def get_args_parser():
     
     parser.add_argument('--plot_attention_map', action='store_true', default=False)
     parser.add_argument('--plot_embeddings', action='store_true', default=False)
-    parser.add_argument('--embeddings_dir', default='',
-                        help='path where to save embeddings, empty for no saving')
-    parser.add_argument('--predictions_dir', default='',
-                        help='path where to save prediction, empty for no saving')
+    parser.add_argument('--save_embeddings', action='store_true', default=False,
+                        help='save model embeddings')
+    parser.add_argument('--save_logits', action='store_true', default=False,
+                        help='save model logits')
 
     parser.add_argument('--start_epoch', default=0, type=int, metavar='N',
                         help='start epoch')
@@ -233,37 +229,9 @@ def get_args_parser():
 
     return parser
 
-
-def attention_forward_wrapper(attn_obj):
-    """
-    Modified version of def forward() of class Attention() in timm.models.vision_transformer
-    """
-    def my_forward(x):
-        B, N, C = x.shape # C = embed_dim
-        # (3, B, Heads, N, head_dim)
-        qkv = attn_obj.qkv(x).reshape(B, N, 3, attn_obj.num_heads, C // attn_obj.num_heads).permute(2, 0, 3, 1, 4)
-        q, k, v = qkv.unbind(0)   # make torchscript happy (cannot use tensor as tuple)
-
-        # (B, Heads, N, N)
-        attn = (q @ k.transpose(-2, -1)) * attn_obj.scale
-        attn = attn.softmax(dim=-1)
-        attn = attn_obj.attn_drop(attn)
-        # (B, Heads, N, N)
-        attn_obj.attn_map = attn # this was added 
-
-        # (B, N, Heads*head_dim)
-        x = (attn @ v).transpose(1, 2).reshape(B, N, C)
-        x = attn_obj.proj(x)
-        x = attn_obj.proj_drop(x)
-        return x
-    return my_forward
-
 def main(args):
     args.input_size = (args.input_channels, args.input_electrodes, args.time_steps)
     args.patch_size = (args.patch_height, args.patch_width)
-
-    if args.attention_pool:
-        args.global_pool = "attention_pool"
 
     # misc.init_distributed_mode(args)
     args.distributed = False
@@ -314,20 +282,22 @@ def main(args):
         sampler_train = torch.utils.data.RandomSampler(dataset_train)
         sampler_val = torch.utils.data.SequentialSampler(dataset_val)
 
-    if global_rank == 0 and args.log_dir is not None: # and not args.eval:
+    # tensorboard logging
+    if False: #global_rank == 0 and args.log_dir and not args.eval:
         os.makedirs(args.log_dir, exist_ok=True)
         log_writer = SummaryWriter(log_dir=args.log_dir)
-
-        if args.wandb == True:
-            config = vars(args)
-            if args.wandb_id:
-                wandb.init(project=args.wandb_project, id=args.wandb_id, config=config, entity="oturgut")
-            else:
-                wandb.init(project=args.wandb_project, config=config, entity="oturgut")
-    elif args.eval and "checkpoint" not in args.resume.split("/")[-1]:
+    elif False: #args.log_dir and args.eval and "checkpoint" not in args.resume.split("/")[-1]:
         log_writer = SummaryWriter(log_dir=args.log_dir + "/eval")
     else:
         log_writer = None
+
+    # wandb logging
+    if args.wandb == True:
+        config = vars(args)
+        if args.wandb_id:
+            wandb.init(project=args.wandb_project, id=args.wandb_id, config=config, entity="oturgut")
+        else:
+            wandb.init(project=args.wandb_project, config=config, entity="oturgut")
 
     data_loader_train = torch.utils.data.DataLoader(
         dataset_train, 
@@ -364,13 +334,12 @@ def main(args):
         num_classes=args.nb_classes,
         drop_path_rate=args.drop_path,
         global_pool=args.global_pool,
-        downstream_task=args.downstream_task,
+        attention_pool=args.attention_pool,
         masking_blockwise=args.masking_blockwise,
         mask_ratio=args.mask_ratio,
         mask_c_ratio=args.mask_c_ratio,
         mask_t_ratio=args.mask_t_ratio
     )
-    model.blocks[-1].attn.forward = attention_forward_wrapper(model.blocks[-1].attn) # required to read out the attention map of the last layer
 
     if args.finetune and not args.eval:
         checkpoint = torch.load(args.finetune, map_location='cpu')
@@ -390,26 +359,15 @@ def main(args):
         msg = model.load_state_dict(checkpoint_model, strict=False)
         print(msg)
 
-        if args.global_pool == "attention_pool":
-            # assert set(msg.missing_keys) == {'head.weight', 'head.bias', 'fc_norm.weight', 'fc_norm.bias', 'attention_pool.out_proj.weight', 'attention_pool.in_proj_weight', 'attention_pool.out_proj.bias', 'attention_pool.in_proj_bias'}
-            pass
-        elif args.global_pool:
+        if args.global_pool:
             assert set(msg.missing_keys) == {'head.weight', 'head.bias', 'fc_norm.weight', 'fc_norm.bias'}
+        elif args.attention_pool:
+            pass
         else:
             assert set(msg.missing_keys) == {'head.weight', 'head.bias'}
 
         # manually initialize fc layer
         trunc_normal_(model.head.weight, std=0.01)#2e-5)
-
-    # # for linear prob only
-    # # hack: revise model's head with BN
-    # model.head = torch.nn.Sequential(torch.nn.BatchNorm1d(model.head.in_features, affine=False, eps=1e-6), model.head)
-    # # freeze all but the head
-    # print("Every layer but the head frozen")
-    # for _, p in model.named_parameters():
-    #     p.requires_grad = False
-    # for _, p in model.head.named_parameters():
-    #     p.requires_grad = True
     
     model.to(device, non_blocking=True)
 
@@ -487,24 +445,15 @@ def main(args):
     early_stop = EarlyStop(patience=args.patience, max_delta=args.max_delta)
     
     print(f"Start training for {args.epochs} epochs")
-    start_time = time.time()
     best_stats = {'loss':np.inf, 'acc':0.0, 'f1':0.0, 'auroc':0.0, 'auprc':0.0, 'rmse':np.inf, 'pcc':0.0}
     for epoch in range(args.start_epoch, args.epochs):
-        # if epoch == 2:
-        #     for _, p in model.named_parameters():
-        #         p.requires_grad = True
-        yo = [n for n, p in model.named_parameters() if p.requires_grad]
-        print(f"# REQUIRED PARAMS: {len(yo)}")
+        start_time = time.time()
 
         if True: #args.distributed:
             data_loader_train.sampler.set_epoch(epoch)
-        train_stats, train_history = train_one_epoch(
-            model, criterion, data_loader_train,
-            optimizer, device, epoch, loss_scaler,
-            args.clip_grad, mixup_fn,
-            log_writer=log_writer,
-            args=args
-        )
+        
+        train_stats, train_history = train_one_epoch(model, criterion, data_loader_train, optimizer, device, epoch, loss_scaler, 
+                                                     args.clip_grad, mixup_fn, log_writer=log_writer, args=args)
 
         test_stats, test_history = evaluate(data_loader_val, model, device, epoch, log_writer=log_writer, args=args)
         if args.downstream_task == 'classification':
@@ -548,20 +497,17 @@ def main(args):
                         'n_parameters': n_parameters}
 
         if args.output_dir and misc.is_main_process():
-            if log_writer is not None:
+            if log_writer:
                 log_writer.flush()
             with open(os.path.join(args.output_dir, "log.txt"), mode="a", encoding="utf-8") as f:
                 f.write(json.dumps(log_stats) + "\n")
 
+        total_time = time.time() - start_time
         if args.wandb:
-            wandb.log(train_history | test_history)
+            wandb.log(train_history | test_history | {"Time per epoch [sec]": total_time})
 
     if args.wandb:
         wandb.log({f'Best Statistics/{k}': v for k, v in best_stats.items()})
-
-    total_time = time.time() - start_time
-    total_time_str = str(datetime.timedelta(seconds=int(total_time)))
-    print('Training time {}'.format(total_time_str))
 
 
 if __name__ == '__main__':
