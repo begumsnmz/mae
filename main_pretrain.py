@@ -243,7 +243,7 @@ def main(args):
         data_loader_online_train = torch.utils.data.DataLoader(
             dataset_online_train, 
             shuffle=True,
-            batch_size=16,
+            batch_size=256,
             num_workers=args.num_workers,
             pin_memory=args.pin_mem,
             drop_last=False,
@@ -252,7 +252,7 @@ def main(args):
         data_loader_online_val = torch.utils.data.DataLoader(
             dataset_online_val, 
             shuffle=False,
-            batch_size=16,
+            batch_size=256,
             num_workers=args.num_workers,
             pin_memory=args.pin_mem,
             drop_last=False,
@@ -268,10 +268,14 @@ def main(args):
 
     model.to(device, non_blocking=True)
     n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    n_params_encoder = sum(p.numel() for n, p in model.named_parameters() if p.requires_grad and "decoder" not in n)
+    n_params_decoder = sum(p.numel() for n, p in model.named_parameters() if p.requires_grad and "decoder" in n)
 
     model_without_ddp = model
     print("Model = %s" % str(model_without_ddp))
     print('Number of params (M): %.2f' % (n_parameters / 1.e6))
+    print('Number of encoder params (M): %.2f' % (n_params_encoder / 1.e6))
+    print('Number of decoder params (M): %.2f' % (n_params_decoder / 1.e6))
 
     eff_batch_size = args.batch_size * args.accum_iter * misc.get_world_size()
     

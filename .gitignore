@@ -2,8 +2,10 @@
 bash_scripts/
 logs/
 output/
+checkpoints/
 wandb/
 slurm_output/
+.vscode/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
