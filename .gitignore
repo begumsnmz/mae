@@ -3,6 +3,7 @@ bash_scripts/
 logs/
 output/
 wandb/
+slurm_output/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
