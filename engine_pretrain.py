@@ -14,6 +14,8 @@ from typing import Iterable
 
 import torch
 
+import numpy as np
+
 import wandb
 
 import util.misc as misc
@@ -21,7 +23,8 @@ import util.lr_sched as lr_sched
 
 import matplotlib.pyplot as plt
 
-from sklearn.metrics import roc_auc_score, f1_score, accuracy_score
+from sklearn.metrics import roc_auc_score, f1_score, accuracy_score, mean_squared_error
+from sklearn.feature_selection import r_regression
 
 
 def norm(data:torch.Tensor()) -> torch.Tensor():
@@ -172,8 +175,9 @@ def evaluate_online(estimator, model, device, train_dataloader, val_dataloader, 
     # training
     train_embeddings = []
     train_labels = []
-    for data, label, _ in train_dataloader:
+    for data, label, label_mask in train_dataloader:
         data = data.to(device, non_blocking=True)
+        label = label * label_mask
         train_labels.append(label.to(device, non_blocking=True))
 
         with torch.cuda.amp.autocast():
@@ -185,18 +189,23 @@ def evaluate_online(estimator, model, device, train_dataloader, val_dataloader, 
     train_labels = train_labels.cpu()
 
     estimator.fit(train_embeddings, train_labels) # only fit with training data
-
-    train_probs = torch.tensor(estimator.predict_proba(train_embeddings), dtype=torch.float16)
     
-    classifier_f1_train = f1_score(y_true=train_labels, y_pred=train_probs.argmax(dim=-1), pos_label=1)
-    classifier_acc_train = accuracy_score(y_true=train_labels, y_pred=train_probs.argmax(dim=-1))
-    classifier_auc_train = roc_auc_score(y_true=torch.nn.functional.one_hot(train_labels, num_classes=-1), y_score=train_probs)
+    if args.online_evaluation_task == "classification":
+        train_probs = torch.tensor(estimator.predict_proba(train_embeddings), dtype=torch.float16)
+        classifier_f1_train = f1_score(y_true=train_labels, y_pred=train_probs.argmax(dim=-1), pos_label=1)
+        classifier_acc_train = accuracy_score(y_true=train_labels, y_pred=train_probs.argmax(dim=-1))
+        classifier_auc_train = roc_auc_score(y_true=torch.nn.functional.one_hot(train_labels, num_classes=-1), y_score=train_probs)
+    elif args.online_evaluation_task == "regression":
+        train_preds = torch.tensor(estimator.predict(train_embeddings), dtype=torch.float16)
+        classifier_rmse_train = mean_squared_error(train_preds, train_labels, multioutput="raw_values", squared=False)
+        classifier_pcc_train = np.concatenate([r_regression(train_preds[:, i].view(-1, 1), train_labels[:, i]) for i in range(train_labels.shape[-1])], axis=0)
 
     # validation
     val_embeddings = []
     val_labels = []
-    for data, label, _ in val_dataloader:
+    for data, label, label_mask in val_dataloader:
         data = data.to(device, non_blocking=True)
+        label = label * label_mask
         val_labels.append(label.to(device, non_blocking=True))
 
         with torch.cuda.amp.autocast():
@@ -206,21 +215,32 @@ def evaluate_online(estimator, model, device, train_dataloader, val_dataloader, 
     val_embeddings = val_embeddings.cpu()
     val_labels = torch.cat(val_labels, dim=0)
     val_labels = val_labels.cpu()
-
-    val_probs = torch.tensor(estimator.predict_proba(val_embeddings), dtype=torch.float16)
     
-    classifier_f1_val = f1_score(y_true=val_labels, y_pred=val_probs.argmax(dim=-1), pos_label=1)
-    classifier_acc_val = accuracy_score(y_true=val_labels, y_pred=val_probs.argmax(dim=-1))
-    classifier_auc_val = roc_auc_score(y_true=torch.nn.functional.one_hot(val_labels, num_classes=-1), y_score=val_probs)
+    if args.online_evaluation_task == "classification":
+        val_probs = torch.tensor(estimator.predict_proba(val_embeddings), dtype=torch.float16)
+        classifier_f1_val = f1_score(y_true=val_labels, y_pred=val_probs.argmax(dim=-1), pos_label=1)
+        classifier_acc_val = accuracy_score(y_true=val_labels, y_pred=val_probs.argmax(dim=-1))
+        classifier_auc_val = roc_auc_score(y_true=torch.nn.functional.one_hot(val_labels, num_classes=-1), y_score=val_probs)
+    elif args.online_evaluation_task == "regression":
+        val_preds = torch.tensor(estimator.predict(val_embeddings), dtype=torch.float16)
+        classifier_rmse_val = mean_squared_error(val_preds, val_labels, multioutput="raw_values", squared=False)
+        classifier_pcc_val = np.concatenate([r_regression(val_preds[:, i].view(-1, 1), val_labels[:, i]) for i in range(val_labels.shape[-1])], axis=0)
 
     # stats
-    online_history['online/train_f1'] = classifier_f1_train
-    online_history['online/train_acc'] = classifier_acc_train
-    online_history['online/train_auc'] = classifier_auc_train
+    if args.online_evaluation_task == "classification":
+        online_history['online/train_f1'] = classifier_f1_train
+        online_history['online/train_acc'] = classifier_acc_train
+        online_history['online/train_auc'] = classifier_auc_train
 
-    online_history['online/val_f1'] = classifier_f1_val
-    online_history['online/val_acc'] = classifier_acc_val
-    online_history['online/val_auc'] = classifier_auc_val
+        online_history['online/val_f1'] = classifier_f1_val
+        online_history['online/val_acc'] = classifier_acc_val
+        online_history['online/val_auc'] = classifier_auc_val
+    elif args.online_evaluation_task == "regression":
+        online_history['online/train_rmse'] = classifier_rmse_train
+        online_history['online/train_pcc'] = classifier_pcc_train
+
+        online_history['online/val_rmse'] = classifier_rmse_val
+        online_history['online/val_pcc'] = classifier_pcc_val
 
     return online_history
 

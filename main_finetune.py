@@ -42,11 +42,6 @@ from engine_finetune import train_one_epoch, evaluate
 def get_args_parser():
     parser = argparse.ArgumentParser('MAE fine-tuning for image classification', add_help=False)
     # Basic parameters
-    parser.add_argument('--lower_bnd', type=int, default=0, metavar='N',
-                        help='lower_bnd')
-    parser.add_argument('--upper_bnd', type=int, default=0, metavar='N',
-                        help='upper_bnd')
-
     parser.add_argument('--batch_size', default=64, type=int,
                         help='Batch size per GPU (effective batch size is batch_size * accum_iter * # gpus')
     parser.add_argument('--epochs', default=50, type=int)
@@ -178,6 +173,11 @@ def get_args_parser():
                         help='validation labels path (default: None)')
     parser.add_argument('--val_labels_mask_path', default='', type=str,
                         help='validation labels path (default: None)')
+
+    parser.add_argument('--lower_bnd', type=int, default=0, metavar='N',
+                        help='lower_bnd')
+    parser.add_argument('--upper_bnd', type=int, default=0, metavar='N',
+                        help='upper_bnd')
 
     parser.add_argument('--nb_classes', default=2, type=int,
                         help='number of the classification types')
@@ -489,8 +489,8 @@ def main(args):
             best_stats['pcc'] = max(best_stats['pcc'], test_stats['pcc'])
             print(f'Min Root Mean Squared Error (RMSE) / Max Pearson Correlation Coefficient: {best_stats["rmse"]:.4f} / {best_stats["pcc"]:.4f}\n')
 
-        log_stats = {**{f'train_{k}': v for k, v in train_stats.items()},
-                        **{f'test_{k}': v for k, v in test_stats.items()},
+        log_stats = {**{f'train_{k}': str(v) for k, v in train_stats.items()},
+                        **{f'test_{k}': str(v) for k, v in test_stats.items()},
                         'epoch': epoch,
                         'n_parameters': n_parameters}
 

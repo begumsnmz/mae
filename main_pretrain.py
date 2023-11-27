@@ -30,7 +30,7 @@ from util.misc import NativeScalerWithGradNormCount as NativeScaler
 from util.callbacks import EarlyStop
 
 import models_mae
-from sklearn.linear_model import LogisticRegression
+from sklearn.linear_model import LogisticRegression, LinearRegression
 
 from engine_pretrain import train_one_epoch, evaluate_online, evaluate
 
@@ -117,16 +117,25 @@ def get_args_parser():
                         help='Online downstream task (default: classification)')
     parser.add_argument('--online_num_classes', default=2, type=int,
                         help='Online classification task classes (default: 2)')
+    
+    parser.add_argument('--lower_bnd', type=int, default=0, metavar='N',
+                        help='lower_bnd')
+    parser.add_argument('--upper_bnd', type=int, default=0, metavar='N',
+                        help='upper_bnd')
 
     parser.add_argument('--data_path_online', default='_.pt', type=str,
                         help='dataset path for the online evaluation')
     parser.add_argument('--labels_path_online', default='_.pt', type=str,
                         help='labels path for the online evaluation')
+    parser.add_argument('--labels_mask_path_online', default='', type=str,
+                        help='labels path (default: None)')
     
     parser.add_argument('--val_data_path_online', default='', type=str,
                         help='validation dataset path for the online evaluation')
     parser.add_argument('--val_labels_path_online', default='', type=str,
                         help='validation labels path for the online evaluation')
+    parser.add_argument('--val_labels_mask_path_online', default='', type=str,
+                        help='labels path (default: None)')
 
     parser.add_argument('--output_dir', default='',
                         help='path where to save, empty for no saving')
@@ -236,9 +245,11 @@ def main(args):
     # online evaluation
     if args.online_evaluation:
         dataset_online_train = SignalDataset(data_path=args.data_path_online, labels_path=args.labels_path_online, 
-                                            downstream_task=args.online_evaluation_task, train=True, args=args)
+                                             labels_mask_path=args.labels_mask_path_online, 
+                                             downstream_task=args.online_evaluation_task, train=True, args=args)
         dataset_online_val = SignalDataset(data_path=args.val_data_path_online, labels_path=args.val_labels_path_online, 
-                                        downstream_task=args.online_evaluation_task, train=False, args=args)
+                                           labels_mask_path=args.val_labels_mask_path_online, 
+                                           downstream_task=args.online_evaluation_task, train=False, args=args)
 
         data_loader_online_train = torch.utils.data.DataLoader(
             dataset_online_train, 
@@ -326,7 +337,10 @@ def main(args):
         # online evaluation of the downstream task
         online_history = {}
         if args.online_evaluation and epoch % 5 == 0:
-            online_estimator = LogisticRegression(class_weight='balanced', max_iter=2000)
+            if args.online_evaluation_task == "classification":
+                online_estimator = LogisticRegression(class_weight='balanced', max_iter=2000)
+            elif args.online_evaluation_task == "regression":
+                online_estimator = LinearRegression()
             online_history = evaluate_online(estimator=online_estimator, model=model, device=device, train_dataloader=data_loader_online_train, 
                                              val_dataloader=data_loader_online_val, args=args)
 
