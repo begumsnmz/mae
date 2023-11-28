@@ -319,13 +319,14 @@ def save_best_model(args, epoch, model, model_without_ddp, optimizer, loss_scale
     epoch_name = str(epoch)
 
     file_names = os.listdir(output_dir)
+    # remove directories from list
+    file_names = [file for file in file_names if os.path.isfile(os.path.join(args.output_dir, file))]
+    # ignore exceptions from list
+    exceptions = ["log.txt"]
+    file_names = [file for file in file_names if file not in exceptions]
+
     # save the 5 best performing models
     if len(file_names) > 5:
-        for entry in ["log.txt", "predictions", "embeddings"]:
-            try:
-                file_names.remove(entry)
-            except:
-                pass
         file_names = sorted(file_names, key=lambda str: int(re.search(r'\d+', str).group()))
         os.remove(os.path.join(output_dir, file_names[0]))
 
