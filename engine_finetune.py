@@ -233,6 +233,13 @@ def evaluate(data_loader, model, device, epoch, log_writer=None, args=None):
         file_name = f"embeddings_test.pt" if args.eval else f"embeddings_{epoch}.pt"
         torch.save(embeddings, os.path.join(embeddings_path, file_name))
 
+    # gather the stats from all processes
+    metric_logger.synchronize_between_processes()
+
+    logits = torch.cat(logits, dim=0).to(device="cpu", dtype=torch.float32).detach()    # (B, num_classes)
+    probs = torch.nn.functional.softmax(logits, dim=-1)                                 # (B, num_classes)
+    labels = torch.cat(labels, dim=0).to(device="cpu").detach()                         # (B, 1)
+    
     if args.save_logits:
         logits_path = os.path.join(args.output_dir, "logits")
         if not os.path.exists(logits_path):
@@ -240,13 +247,6 @@ def evaluate(data_loader, model, device, epoch, log_writer=None, args=None):
         
         file_name = f"logits_test.pt" if args.eval else f"logits_{epoch}.pt"
         torch.save(logits, os.path.join(logits_path, file_name))
-
-    # gather the stats from all processes
-    metric_logger.synchronize_between_processes()
-
-    logits = torch.cat(logits, dim=0).to(device="cpu", dtype=torch.float32).detach()    # (B, num_classes)
-    probs = torch.nn.functional.softmax(logits, dim=-1)                                 # (B, num_classes)
-    labels = torch.cat(labels, dim=0).to(device="cpu").detach()                         # (B, 1)
 
     test_stats = {k: meter.global_avg for k, meter in metric_logger.meters.items()}
     if args.downstream_task == 'classification':

@@ -89,7 +89,7 @@ def get_1d_sincos_pos_embed_from_grid(embed_dim, pos):
 # References:
 # DeiT: https://github.com/facebookresearch/deit
 # --------------------------------------------------------
-def interpolate_pos_embed(model, checkpoint_model):
+def interpolate_pos_embed(model, checkpoint_model, checkpoint_input_size):
     if 'pos_embed' in checkpoint_model:
         pos_embed_checkpoint = checkpoint_model['pos_embed']
         embedding_size = pos_embed_checkpoint.shape[-1]
@@ -98,8 +98,10 @@ def interpolate_pos_embed(model, checkpoint_model):
 
         # height, width for the checkpoint position embedding
         patch_embed_checkpoint = checkpoint_model['patch_embed.proj.weight']
-        orig_height, _ = model.patch_embed.grid_size
-        orig_width = int((pos_embed_checkpoint.shape[-2] - num_extra_tokens) / orig_height)
+        orig_patch_heigt = patch_embed_checkpoint.shape[-2]
+        orig_patch_width = patch_embed_checkpoint.shape[-1]
+        orig_height = int(checkpoint_input_size[-2] / orig_patch_heigt)
+        orig_width = int(checkpoint_input_size[-1] / orig_patch_width)
 
         # height, width for the new position embedding
         new_height, _ = model.patch_embed.grid_size

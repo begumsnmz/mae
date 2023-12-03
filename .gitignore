@@ -6,6 +6,9 @@ checkpoints/
 wandb/
 slurm_output/
 .vscode/
+figures/
+
+notebooks/read_out.ipynb
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

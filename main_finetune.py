@@ -351,7 +351,8 @@ def main(args):
                 del checkpoint_model[k]
 
         # interpolate position embedding
-        interpolate_pos_embed(model, checkpoint_model)
+        checkpoint_input_size = checkpoint['args'].input_size
+        interpolate_pos_embed(model, checkpoint_model, checkpoint_input_size)
 
         # load pre-trained model
         msg = model.load_state_dict(checkpoint_model, strict=False)
@@ -457,7 +458,7 @@ def main(args):
         if args.downstream_task == 'classification':
             eval_criterion = "auroc"
         elif args.downstream_task == 'regression':
-            eval_criterion = "rmse"
+            eval_criterion = "pcc"
 
         if eval_criterion == "loss" or eval_criterion == "rmse":
             if early_stop.evaluate_decreasing_metric(val_metric=test_stats[eval_criterion]):
