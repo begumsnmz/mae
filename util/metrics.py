@@ -1,3 +1,6 @@
+from typing import List
+
+
 class MeanSquaredError():
     def __init__(self, squared:bool=True) -> None:
         """
@@ -39,3 +42,24 @@ class MeanSquaredError():
     def reset(self) -> None:
         self.N = 0
         self.running_squared_sum = []
+
+
+def update_best_stats(best_stats:List, test_stat:float, best_stats_len:int, mode="increasing") -> List:
+    if mode == "decreasing":
+        # e.g. loss
+        if max(best_stats) > test_stat:    # if better than worst score
+            best_stats.append(test_stat)
+
+        if len(best_stats) > best_stats_len:
+            best_stats = sorted(best_stats)
+            best_stats.pop()
+    else: 
+        # e.g. auroc
+        if min(best_stats) < test_stat:    # if better than worst score
+            best_stats.append(test_stat)
+
+        if len(best_stats) > best_stats_len:
+            best_stats = sorted(best_stats, reverse=True)
+            best_stats.pop()
+
+    return best_stats

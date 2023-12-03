@@ -28,6 +28,7 @@ import timm.optim.optim_factory as optim_factory
 import util.misc as misc
 from util.misc import NativeScalerWithGradNormCount as NativeScaler
 from util.callbacks import EarlyStop
+from util.metrics import update_best_stats
 
 import models_mae
 from sklearn.linear_model import LogisticRegression, LinearRegression
@@ -317,7 +318,8 @@ def main(args):
     print(f"Start training for {args.epochs} epochs")
 
     eval_criterion = "ncc"
-    best_stats = {'loss':np.inf, 'ncc':0.0}
+    best_stats = {'loss':[np.inf], 'ncc':[0.0]}
+    max_len_best_stats = 5
     for epoch in range(args.start_epoch, args.epochs):
         start_time = time.time()
 
@@ -347,20 +349,22 @@ def main(args):
         if eval_criterion == "loss":
             if early_stop.evaluate_decreasing_metric(val_metric=val_stats[eval_criterion]):
                 break
-            if args.output_dir and val_stats[eval_criterion] <= best_stats[eval_criterion]:
+            if args.output_dir and val_stats[eval_criterion] <= max(best_stats[eval_criterion]):
                 misc.save_best_model(
                     args=args, model=model, model_without_ddp=model_without_ddp, optimizer=optimizer,
-                    loss_scaler=loss_scaler, epoch=epoch, test_stats=val_stats, evaluation_criterion=eval_criterion)
+                    loss_scaler=loss_scaler, epoch=epoch, test_stats=val_stats, evaluation_criterion=eval_criterion, 
+                    mode="decreasing")
         else:
             if early_stop.evaluate_increasing_metric(val_metric=val_stats[eval_criterion]):
                 break
-            if args.output_dir and val_stats[eval_criterion] >= best_stats[eval_criterion]:
+            if args.output_dir and val_stats[eval_criterion] >= min(best_stats[eval_criterion]):
                 misc.save_best_model(
                     args=args, model=model, model_without_ddp=model_without_ddp, optimizer=optimizer,
-                    loss_scaler=loss_scaler, epoch=epoch, test_stats=val_stats, evaluation_criterion=eval_criterion)
+                    loss_scaler=loss_scaler, epoch=epoch, test_stats=val_stats, evaluation_criterion=eval_criterion, 
+                    mode="increasing")
 
-        best_stats['loss'] = min(best_stats['loss'], val_stats['loss'])
-        best_stats['ncc'] = max(best_stats['ncc'], val_stats['ncc'])
+        best_stats['loss'] = update_best_stats(best_stats['loss'], val_stats['loss'], max_len_best_stats, mode="decreasing")
+        best_stats['ncc'] = update_best_stats(best_stats['ncc'], val_stats['ncc'], max_len_best_stats, mode="increasing")
             
         log_stats = {**{f'train_{k}': v for k, v in train_stats.items()},
                         'epoch': epoch,}

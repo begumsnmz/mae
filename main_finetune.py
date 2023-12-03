@@ -33,6 +33,7 @@ import util.misc as misc
 from util.pos_embed import interpolate_pos_embed
 from util.misc import NativeScalerWithGradNormCount as NativeScaler
 from util.callbacks import EarlyStop
+from util.metrics import update_best_stats
 
 import models_vit
 
@@ -444,7 +445,13 @@ def main(args):
     early_stop = EarlyStop(patience=args.patience, max_delta=args.max_delta)
     
     print(f"Start training for {args.epochs} epochs")
-    best_stats = {'loss':np.inf, 'acc':0.0, 'f1':0.0, 'auroc':0.0, 'auprc':0.0, 'rmse':np.inf, 'pcc':0.0}
+
+    if args.downstream_task == 'classification':
+        eval_criterion = "auroc"
+    elif args.downstream_task == 'regression':
+        eval_criterion = "pcc"
+    best_stats = {'loss':[np.inf], 'acc':[0.0], 'f1':[0.0], 'auroc':[0.0], 'auprc':[0.0], 'rmse':[np.inf], 'pcc':[0.0]}
+    max_len_best_stats = 5
     for epoch in range(args.start_epoch, args.epochs):
         start_time = time.time()
 
@@ -455,40 +462,40 @@ def main(args):
                                                      args.clip_grad, mixup_fn, log_writer=log_writer, args=args)
 
         test_stats, test_history = evaluate(data_loader_val, model, device, epoch, log_writer=log_writer, args=args)
-        if args.downstream_task == 'classification':
-            eval_criterion = "auroc"
-        elif args.downstream_task == 'regression':
-            eval_criterion = "pcc"
 
         if eval_criterion == "loss" or eval_criterion == "rmse":
             if early_stop.evaluate_decreasing_metric(val_metric=test_stats[eval_criterion]):
                 break
-            if args.output_dir and test_stats[eval_criterion] <= best_stats[eval_criterion]:
+            if args.output_dir and test_stats[eval_criterion] <= max(best_stats[eval_criterion]):
                 misc.save_best_model(
                     args=args, model=model, model_without_ddp=model_without_ddp, optimizer=optimizer,
-                    loss_scaler=loss_scaler, epoch=epoch, test_stats=test_stats, evaluation_criterion=eval_criterion)
+                    loss_scaler=loss_scaler, epoch=epoch, test_stats=test_stats, evaluation_criterion=eval_criterion, 
+                    mode="decreasing")
         else:
             if early_stop.evaluate_increasing_metric(val_metric=test_stats[eval_criterion]):
                 break
-            if args.output_dir and test_stats[eval_criterion] >= best_stats[eval_criterion]:
+            if args.output_dir and test_stats[eval_criterion] >= min(best_stats[eval_criterion]):
                 misc.save_best_model(
                     args=args, model=model, model_without_ddp=model_without_ddp, optimizer=optimizer,
-                    loss_scaler=loss_scaler, epoch=epoch, test_stats=test_stats, evaluation_criterion=eval_criterion)
+                    loss_scaler=loss_scaler, epoch=epoch, test_stats=test_stats, evaluation_criterion=eval_criterion, 
+                    mode="increasing")
 
-        best_stats['loss'] = min(best_stats['loss'], test_stats['loss'])
+        best_stats['loss'] = update_best_stats(best_stats['loss'], test_stats['loss'], max_len_best_stats, mode="decreasing")
         if args.downstream_task == 'classification':
             print(f"Accuracy / F1 / AUROC / AUPRC of the network on the {len(dataset_val)} test images: {test_stats['acc']:.1f}% / {test_stats['f1']:.1f}% / {test_stats['auroc']:.1f}% / {test_stats['auprc']:.1f}%")
-            best_stats['acc'] = max(best_stats['acc'], test_stats["acc"])
-            best_stats['f1'] = max(best_stats['f1'], test_stats['f1'])
-            best_stats['auroc'] = max(best_stats['auroc'], test_stats['auroc'])
-            best_stats['auprc'] = max(best_stats['auprc'], test_stats['auprc'])
-            print(f'Max Accuracy / F1 / AUROC / AUPRC: {best_stats["acc"]:.2f}% / {best_stats["f1"]:.2f}% / {best_stats["auroc"]:.2f}% / {best_stats["auprc"]:.2f}%\n')
+            # update best stats
+            metrics = ["acc", "f1", "auroc", "auprc"]
+            for metric in metrics:
+                best_stats[metric] = update_best_stats(best_stats[metric], test_stats[metric], max_len_best_stats, mode="increasing")
+
+            print(f'Max Accuracy / F1 / AUROC / AUPRC: {max(best_stats["acc"]):.2f}% / {max(best_stats["f1"]):.2f}% / {max(best_stats["auroc"]):.2f}% / {max(best_stats["auprc"]):.2f}%\n')
         elif args.downstream_task == 'regression':
             print(f"Root Mean Squared Error (RMSE) / Pearson Correlation Coefficient (PCC) of the network on the {len(dataset_val)} test images:\
                  {test_stats['rmse']:.4f} / {test_stats['pcc']:.4f}")
-            best_stats['rmse'] = min(best_stats['rmse'], test_stats['rmse'])
-            best_stats['pcc'] = max(best_stats['pcc'], test_stats['pcc'])
-            print(f'Min Root Mean Squared Error (RMSE) / Max Pearson Correlation Coefficient: {best_stats["rmse"]:.4f} / {best_stats["pcc"]:.4f}\n')
+            # update best stats
+            best_stats['rmse'] = update_best_stats(best_stats['rmse'], test_stats['rmse'], max_len_best_stats, mode="decreasing")
+            best_stats['pcc'] = update_best_stats(best_stats['pcc'], test_stats['pcc'], max_len_best_stats, mode="increasing")
+            print(f'Min Root Mean Squared Error (RMSE) / Max Pearson Correlation Coefficient: {min(best_stats["rmse"]):.4f} / {max(best_stats["pcc"]):.4f}\n')
 
         log_stats = {**{f'train_{k}': str(v) for k, v in train_stats.items()},
                         **{f'test_{k}': str(v) for k, v in test_stats.items()},
@@ -506,7 +513,8 @@ def main(args):
             wandb.log(train_history | test_history | {"Time per epoch [sec]": total_time})
 
     if args.wandb:
-        wandb.log({f'Best Statistics/{k}': v for k, v in best_stats.items()})
+        wandb.log({f'Best Statistics/{k}': max(v) for k, v in best_stats.items() if k in ["acc", "f1", "auroc", "auprc", "pcc"]} | 
+                  {f'Best Statistics/{k}': min(v) for k, v in best_stats.items() if k in ["loss", "rmse"]})
 
 
 if __name__ == '__main__':

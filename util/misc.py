@@ -314,7 +314,7 @@ def save_model(args, epoch, model, model_without_ddp, optimizer, loss_scaler):
         client_state = {'epoch': epoch}
         model.save_checkpoint(save_dir=args.output_dir, tag="checkpoint-%s" % epoch_name, client_state=client_state)
 
-def save_best_model(args, epoch, model, model_without_ddp, optimizer, loss_scaler, test_stats, evaluation_criterion):
+def save_best_model(args, epoch, model, model_without_ddp, optimizer, loss_scaler, test_stats, evaluation_criterion, mode="increasing"):
     output_dir = Path(args.output_dir)
     epoch_name = str(epoch)
 
@@ -326,8 +326,12 @@ def save_best_model(args, epoch, model, model_without_ddp, optimizer, loss_scale
     file_names = [file for file in file_names if file not in exceptions]
 
     # save the 5 best performing models
-    if len(file_names) > 5:
-        file_names = sorted(file_names, key=lambda str: int(re.search(r'\d+', str).group()))
+    if len(file_names) >= 5:
+        # file_names = sorted(file_names, key=lambda str: int(re.search(r'\d+', str).group()))
+        if mode == "increasing":
+            file_names = sorted(file_names, key=lambda x: float(x.split(".pth")[0].split("-")[-1]))
+        else: # decreasing
+            file_names = sorted(file_names, key=lambda x: float(x.split(".pth")[0].split("-")[-1]), reverse=True)
         os.remove(os.path.join(output_dir, file_names[0]))
 
     # # only save the best performing model
@@ -336,7 +340,7 @@ def save_best_model(args, epoch, model, model_without_ddp, optimizer, loss_scale
     #         os.remove(os.path.join(output_dir, file))
 
     if loss_scaler is not None:
-        checkpoint_paths = [output_dir / (f"checkpoint-{epoch_name}-{evaluation_criterion}-{test_stats[evaluation_criterion]:.2f}.pth")]
+        checkpoint_paths = [output_dir / (f"checkpoint-{epoch_name}-{evaluation_criterion}-{test_stats[evaluation_criterion]:.4f}.pth")]
         for checkpoint_path in checkpoint_paths:
             to_save = {
                 'model': model_without_ddp.state_dict(),
@@ -349,7 +353,7 @@ def save_best_model(args, epoch, model, model_without_ddp, optimizer, loss_scale
             save_on_master(to_save, checkpoint_path)
     else:
         client_state = {'epoch': epoch}
-        model.save_checkpoint(save_dir=args.output_dir, tag=f"checkpoint-{epoch_name}-{evaluation_criterion}-{test_stats[evaluation_criterion]:.2f}.pth", client_state=client_state)
+        model.save_checkpoint(save_dir=args.output_dir, tag=f"checkpoint-{epoch_name}-{evaluation_criterion}-{test_stats[evaluation_criterion]:.4f}.pth", client_state=client_state)
 
 def load_model(args, model_without_ddp, optimizer, loss_scaler):
     if args.resume:
