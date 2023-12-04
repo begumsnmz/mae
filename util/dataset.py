@@ -3,6 +3,7 @@ import sys
 from typing import Any, Tuple
 
 import numpy as np
+import glob
 
 import torch
 from torch.utils.data import Dataset
@@ -25,7 +26,9 @@ class SignalDataset(Dataset):
         
         self.args = args
 
-        data = torch.load(data_path, map_location=torch.device('cpu')) # load to ram
+        data_paths = glob.glob(os.path.join(data_path, '*.pt'))
+        data = torch.stack([torch.tensor(torch.load(path, map_location=torch.device('cpu')), dtype=torch.float32) for path in data_paths])
+
         if self.args.input_size[0] == 1:
             data = data.unsqueeze(dim=1)
 
@@ -52,6 +55,7 @@ class SignalDataset(Dataset):
         else:
             data, label, label_mask = self.data[idx], self.labels[idx], self.labels_mask[idx]
         
+        '''
         if self.train == False:
             transform = transforms.Compose([
                 augmentations.CropResizing(fixed_crop_len=self.args.input_size[-1], start_idx=0, resize=False),
@@ -70,6 +74,7 @@ class SignalDataset(Dataset):
                 # augmentations.SignFlip(prob=0.33)
             ])
         data = transform(data)
+        '''
         
         if self.downstream_task == 'classification':
             label = label.type(torch.LongTensor).argmax(dim=-1)
