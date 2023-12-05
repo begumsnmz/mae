@@ -25,7 +25,7 @@ import wandb
 # assert timm.__version__ == "0.3.2" # version check
 from timm.models.layers import trunc_normal_
 from timm.data.mixup import Mixup
-from timm.loss import LabelSmoothingCrossEntropy, SoftTargetCrossEntropy
+from timm.loss import SoftTargetCrossEntropy #, LabelSmoothingCrossEntropy
 
 from util.dataset import SignalDataset
 import util.lr_decay as lrd
@@ -33,7 +33,6 @@ import util.misc as misc
 from util.pos_embed import interpolate_pos_embed
 from util.misc import NativeScalerWithGradNormCount as NativeScaler
 from util.callbacks import EarlyStop
-from util.metrics import update_best_stats
 
 import models_vit
 
@@ -247,16 +246,15 @@ def main(args):
 
     cudnn.benchmark = True
     
-    dataset_train = SignalDataset(data_path=args.data_path, labels_path=args.labels_path, labels_mask_path=args.labels_mask_path,
+    dataset_train = SignalDataset(data_path=args.data_path, labels_path=args.labels_path, 
+                                  labels_mask_path=args.labels_mask_path,
                                   downstream_task=args.downstream_task, train=True, args=args)
-    dataset_val = SignalDataset(data_path=args.val_data_path, labels_path=args.val_labels_path, labels_mask_path=args.val_labels_mask_path, 
+    dataset_val = SignalDataset(data_path=args.val_data_path, labels_path=args.val_labels_path, 
+                                labels_mask_path=args.val_labels_mask_path, 
                                 downstream_task=args.downstream_task, train=False, args=args)
 
     # train balanced
     class_weights = 2.0 / (2.0 * torch.Tensor([1.0, 1.0])) # total_nb_samples / (nb_classes * samples_per_class)
-    # train unbalanced
-    # class_weights = 28030.0 / (2.0 * torch.Tensor([26015.0, 2015.0])) # CAD total_nb_samples / (nb_classes * samples_per_class)
-    # class_weights = 5130.0 / (2.0 * torch.Tensor([2565.0, 2565.0])) # BM total_nb_samples / (nb_classes * samples_per_class) 
 
     print("Training set size: ", len(dataset_train))
     print("Validation set size: ", len(dataset_val))
@@ -394,9 +392,7 @@ def main(args):
 
     # build optimizer with layer-wise lr decay (lrd)
     param_groups = lrd.param_groups_lrd(model_without_ddp, args.weight_decay,
-        no_weight_decay_list=model_without_ddp.no_weight_decay(),
-        layer_decay=args.layer_decay
-    )
+        no_weight_decay_list=model_without_ddp.no_weight_decay(), layer_decay=args.layer_decay)
     optimizer = torch.optim.AdamW(param_groups, lr=args.lr)
     loss_scaler = NativeScaler()
 
@@ -407,7 +403,8 @@ def main(args):
         # smoothing is handled with mixup label transform
         criterion = SoftTargetCrossEntropy()
     elif args.smoothing > 0.:
-        criterion = torch.nn.CrossEntropyLoss(weight=class_weights, label_smoothing=args.smoothing) #LabelSmoothingCrossEntropy(smoothing=args.smoothing)
+        # criterion = LabelSmoothingCrossEntropy(smoothing=args.smoothing)
+        criterion = torch.nn.CrossEntropyLoss(weight=class_weights, label_smoothing=args.smoothing) 
     else:
         criterion = torch.nn.CrossEntropyLoss(weight=class_weights)
 
@@ -431,10 +428,11 @@ def main(args):
 
             test_stats, test_history = evaluate(data_loader_val, model, device, epoch, log_writer=log_writer, args=args)
             if args.downstream_task == 'classification':
-                print(f"Accuracy / F1 / AUROC / AUPRC of the network on the {len(dataset_val)} test images: {test_stats['acc']:.2f}% / {test_stats['f1']:.2f}% / {test_stats['auroc']:.2f}% / {test_stats['auprc']:.2f}%")
+                print(f"Accuracy / F1 / AUROC / AUPRC of the network on the {len(dataset_val)} test images: {test_stats['acc']:.2f}%\
+                       / {test_stats['f1']:.2f}% / {test_stats['auroc']:.2f}% / {test_stats['auprc']:.2f}%")
             elif args.downstream_task == 'regression':
-                print(f"Root Mean Squared Error (RMSE) / Pearson Correlation Coefficient (PCC) of the network on the {len(dataset_val)} test images:\
-                     {test_stats['rmse']:.4f} / {test_stats['pcc']:.4f}")
+                print(f"Root Mean Squared Error (RMSE) / Pearson Correlation Coefficient (PCC) of the network on the\
+                       {len(dataset_val)} test images: {test_stats['rmse']:.4f} / {test_stats['pcc']:.4f}")
         
             if args.wandb:
                 wandb.log(test_history)
@@ -450,23 +448,32 @@ def main(args):
         eval_criterion = "auroc"
     elif args.downstream_task == 'regression':
         eval_criterion = "pcc"
-    best_stats = {'loss':[np.inf], 'acc':[0.0], 'f1':[0.0], 'auroc':[0.0], 'auprc':[0.0], 'rmse':[np.inf], 'pcc':[0.0]}
-    max_len_best_stats = 5
+    
+    best_stats = {'loss':np.inf, 'acc':0.0, 'f1':0.0, 'auroc':0.0, 'auprc':0.0, 'rmse':np.inf, 'pcc':0.0}
+    best_eval_scores = {'count':0, 'nb_ckpts_max':5, 'eval_criterion':[best_stats[eval_criterion]]}
     for epoch in range(args.start_epoch, args.epochs):
         start_time = time.time()
 
         if True: #args.distributed:
             data_loader_train.sampler.set_epoch(epoch)
         
-        train_stats, train_history = train_one_epoch(model, criterion, data_loader_train, optimizer, device, epoch, loss_scaler, 
-                                                     args.clip_grad, mixup_fn, log_writer=log_writer, args=args)
+        train_stats, train_history = train_one_epoch(model, criterion, data_loader_train, optimizer, device, epoch, 
+                                                     loss_scaler, args.clip_grad, mixup_fn, log_writer=log_writer, args=args)
 
         test_stats, test_history = evaluate(data_loader_val, model, device, epoch, log_writer=log_writer, args=args)
 
         if eval_criterion == "loss" or eval_criterion == "rmse":
             if early_stop.evaluate_decreasing_metric(val_metric=test_stats[eval_criterion]):
                 break
-            if args.output_dir and test_stats[eval_criterion] <= max(best_stats[eval_criterion]):
+            if args.output_dir and test_stats[eval_criterion] <= max(best_eval_scores['eval_criterion']):
+                # save the best 5 (nb_ckpts_max) checkpoints, even if they appear after the best checkpoint wrt time
+                if best_eval_scores['count'] < best_eval_scores['nb_ckpts_max']:
+                    best_eval_scores['count'] += 1
+                else:
+                    best_eval_scores['eval_criterion'] = sorted(best_eval_scores['eval_criterion'])
+                    best_eval_scores['eval_criterion'].pop()
+                best_eval_scores['eval_criterion'].append(test_stats[eval_criterion])
+
                 misc.save_best_model(
                     args=args, model=model, model_without_ddp=model_without_ddp, optimizer=optimizer,
                     loss_scaler=loss_scaler, epoch=epoch, test_stats=test_stats, evaluation_criterion=eval_criterion, 
@@ -474,29 +481,44 @@ def main(args):
         else:
             if early_stop.evaluate_increasing_metric(val_metric=test_stats[eval_criterion]):
                 break
-            if args.output_dir and test_stats[eval_criterion] >= min(best_stats[eval_criterion]):
+            if args.output_dir and test_stats[eval_criterion] >= min(best_eval_scores['eval_criterion']):
+                # save the best 5 (nb_ckpts_max) checkpoints, even if they appear after the best checkpoint wrt time
+                if best_eval_scores['count'] < best_eval_scores['nb_ckpts_max']:
+                    best_eval_scores['count'] += 1
+                else:
+                    best_eval_scores['eval_criterion'] = sorted(best_eval_scores['eval_criterion'], reverse=True)
+                    best_eval_scores['eval_criterion'].pop()
+                best_eval_scores['eval_criterion'].append(test_stats[eval_criterion])
+
                 misc.save_best_model(
                     args=args, model=model, model_without_ddp=model_without_ddp, optimizer=optimizer,
                     loss_scaler=loss_scaler, epoch=epoch, test_stats=test_stats, evaluation_criterion=eval_criterion, 
                     mode="increasing")
 
-        best_stats['loss'] = update_best_stats(best_stats['loss'], test_stats['loss'], max_len_best_stats, mode="decreasing")
+        best_stats['loss'] = min(best_stats['loss'], test_stats['loss'])
+        
         if args.downstream_task == 'classification':
-            print(f"Accuracy / F1 / AUROC / AUPRC of the network on the {len(dataset_val)} test images: {test_stats['acc']:.1f}% / {test_stats['f1']:.1f}% / {test_stats['auroc']:.1f}% / {test_stats['auprc']:.1f}%")
             # update best stats
-            metrics = ["acc", "f1", "auroc", "auprc"]
-            for metric in metrics:
-                best_stats[metric] = update_best_stats(best_stats[metric], test_stats[metric], max_len_best_stats, mode="increasing")
+            best_stats['acc'] = max(best_stats['acc'], test_stats["acc"])
+            best_stats['f1'] = max(best_stats['f1'], test_stats['f1'])
+            best_stats['auroc'] = max(best_stats['auroc'], test_stats['auroc'])
+            best_stats['auprc'] = max(best_stats['auprc'], test_stats['auprc'])
 
-            print(f'Max Accuracy / F1 / AUROC / AUPRC: {max(best_stats["acc"]):.2f}% / {max(best_stats["f1"]):.2f}% / {max(best_stats["auroc"]):.2f}% / {max(best_stats["auprc"]):.2f}%\n')
+            print(f"Accuracy / F1 / AUROC / AUPRC of the network on the {len(dataset_val)} test images:\ {test_stats['acc']:.1f}%\
+                   / {test_stats['f1']:.1f}% / {test_stats['auroc']:.1f}% / {test_stats['auprc']:.1f}%")
+            print(f'Max Accuracy / F1 / AUROC / AUPRC: {best_stats["acc"]:.2f}% / {best_stats["f1"]:.2f}%\
+                   / {best_stats["auroc"]:.2f}% / {best_stats["auprc"]:.2f}%\n')
+
         elif args.downstream_task == 'regression':
-            print(f"Root Mean Squared Error (RMSE) / Pearson Correlation Coefficient (PCC) of the network on the {len(dataset_val)} test images:\
-                 {test_stats['rmse']:.4f} / {test_stats['pcc']:.4f}")
             # update best stats
-            best_stats['rmse'] = update_best_stats(best_stats['rmse'], test_stats['rmse'], max_len_best_stats, mode="decreasing")
-            best_stats['pcc'] = update_best_stats(best_stats['pcc'], test_stats['pcc'], max_len_best_stats, mode="increasing")
-            print(f'Min Root Mean Squared Error (RMSE) / Max Pearson Correlation Coefficient: {min(best_stats["rmse"]):.4f} / {max(best_stats["pcc"]):.4f}\n')
+            best_stats['rmse'] = min(best_stats['rmse'], test_stats['rmse'])
+            best_stats['pcc'] = max(best_stats['pcc'], test_stats['pcc'])
 
+            print(f"Root Mean Squared Error (RMSE) / Pearson Correlation Coefficient (PCC) of the network on\
+                   the {len(dataset_val)} test images: {test_stats['rmse']:.4f} / {test_stats['pcc']:.4f}")
+            print(f'Min Root Mean Squared Error (RMSE) / Max Pearson Correlation Coefficient:\
+                   {best_stats["rmse"]:.4f} / {best_stats["pcc"]:.4f}\n')
+        
         log_stats = {**{f'train_{k}': str(v) for k, v in train_stats.items()},
                         **{f'test_{k}': str(v) for k, v in test_stats.items()},
                         'epoch': epoch,
@@ -513,8 +535,7 @@ def main(args):
             wandb.log(train_history | test_history | {"Time per epoch [sec]": total_time})
 
     if args.wandb:
-        wandb.log({f'Best Statistics/{k}': max(v) for k, v in best_stats.items() if k in ["acc", "f1", "auroc", "auprc", "pcc"]} | 
-                  {f'Best Statistics/{k}': min(v) for k, v in best_stats.items() if k in ["loss", "rmse"]})
+        wandb.log({f'Best Statistics/{k}': v for k, v in best_stats.items()})
 
 
 if __name__ == '__main__':
