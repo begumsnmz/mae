@@ -23,7 +23,9 @@ import util.lr_sched as lr_sched
 
 import matplotlib.pyplot as plt
 
-from sklearn.metrics import roc_auc_score, f1_score, accuracy_score, mean_squared_error
+from sklearn.metrics import roc_auc_score, f1_score, accuracy_score, average_precision_score
+from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+
 from sklearn.feature_selection import r_regression
 
 
@@ -195,10 +197,13 @@ def evaluate_online(estimator, model, device, train_dataloader, val_dataloader, 
         classifier_f1_train = f1_score(y_true=train_labels, y_pred=train_probs.argmax(dim=-1), pos_label=1)
         classifier_acc_train = accuracy_score(y_true=train_labels, y_pred=train_probs.argmax(dim=-1))
         classifier_auc_train = roc_auc_score(y_true=torch.nn.functional.one_hot(train_labels, num_classes=-1), y_score=train_probs)
+        classifier_auprc_train = average_precision_score(y_true=torch.nn.functional.one_hot(train_labels, num_classes=-1), y_score=train_probs, pos_label=1)
     elif args.online_evaluation_task == "regression":
         train_preds = torch.tensor(estimator.predict(train_embeddings), dtype=torch.float16)
         classifier_rmse_train = mean_squared_error(train_preds, train_labels, multioutput="raw_values", squared=False)
+        classifier_mae_train = mean_absolute_error(train_preds, train_labels, multioutput="raw_values")
         classifier_pcc_train = np.concatenate([r_regression(train_preds[:, i].view(-1, 1), train_labels[:, i]) for i in range(train_labels.shape[-1])], axis=0)
+        classifier_r2_train = np.stack([r2_score(train_labels[:, i], train_preds[:, i]) for i in range(train_labels.shape[-1])], axis=0)
 
     # validation
     val_embeddings = []
@@ -221,26 +226,35 @@ def evaluate_online(estimator, model, device, train_dataloader, val_dataloader, 
         classifier_f1_val = f1_score(y_true=val_labels, y_pred=val_probs.argmax(dim=-1), pos_label=1)
         classifier_acc_val = accuracy_score(y_true=val_labels, y_pred=val_probs.argmax(dim=-1))
         classifier_auc_val = roc_auc_score(y_true=torch.nn.functional.one_hot(val_labels, num_classes=-1), y_score=val_probs)
+        classifier_auprc_val = average_precision_score(y_true=torch.nn.functional.one_hot(val_labels, num_classes=-1), y_score=val_probs, pos_label=1)
     elif args.online_evaluation_task == "regression":
         val_preds = torch.tensor(estimator.predict(val_embeddings), dtype=torch.float16)
         classifier_rmse_val = mean_squared_error(val_preds, val_labels, multioutput="raw_values", squared=False)
+        classifier_mae_val = mean_absolute_error(val_preds, val_labels, multioutput="raw_values")
         classifier_pcc_val = np.concatenate([r_regression(val_preds[:, i].view(-1, 1), val_labels[:, i]) for i in range(val_labels.shape[-1])], axis=0)
+        classifier_r2_val = np.stack([r2_score(val_labels[:, i], val_preds[:, i]) for i in range(val_labels.shape[-1])], axis=0)
 
     # stats
     if args.online_evaluation_task == "classification":
         online_history['online/train_f1'] = classifier_f1_train
         online_history['online/train_acc'] = classifier_acc_train
         online_history['online/train_auc'] = classifier_auc_train
+        online_history['online/train_auprc'] = classifier_auprc_train
 
         online_history['online/val_f1'] = classifier_f1_val
         online_history['online/val_acc'] = classifier_acc_val
         online_history['online/val_auc'] = classifier_auc_val
+        online_history['online/val_auprc'] = classifier_auprc_val
     elif args.online_evaluation_task == "regression":
-        online_history['online/train_rmse'] = classifier_rmse_train
-        online_history['online/train_pcc'] = classifier_pcc_train
+        online_history['online/train_rmse'] = classifier_rmse_train.mean(axis=-1)
+        online_history['online/train_mae'] = classifier_mae_train.mean(axis=-1)
+        online_history['online/train_pcc'] = classifier_pcc_train.mean(axis=-1)
+        online_history['online/train_r2'] = classifier_r2_train.mean(axis=-1)
 
-        online_history['online/val_rmse'] = classifier_rmse_val
-        online_history['online/val_pcc'] = classifier_pcc_val
+        online_history['online/val_rmse'] = classifier_rmse_val.mean(axis=-1)
+        online_history['online/val_mae'] = classifier_mae_val.mean(axis=-1)
+        online_history['online/val_pcc'] = classifier_pcc_val.mean(axis=-1)
+        online_history['online/val_r2'] = classifier_r2_val.mean(axis=-1)
 
     return online_history
 
