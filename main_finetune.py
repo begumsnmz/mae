@@ -431,8 +431,9 @@ def main(args):
                 print(f"Accuracy / F1 / AUROC / AUPRC of the network on the {len(dataset_val)} test images: {test_stats['acc']:.2f}%\
                        / {test_stats['f1']:.2f}% / {test_stats['auroc']:.2f}% / {test_stats['auprc']:.2f}%")
             elif args.downstream_task == 'regression':
-                print(f"Root Mean Squared Error (RMSE) / Pearson Correlation Coefficient (PCC) of the network on the\
-                       {len(dataset_val)} test images: {test_stats['rmse']:.4f} / {test_stats['pcc']:.4f}")
+                print(f"Root Mean Squared Error (RMSE) / Mean Absolute Error (MAE) / Pearson Correlation Coefficient (PCC) / R Squared (R2) \
+                        of the network on the {len(dataset_val)} test images: {test_stats['rmse']:.4f} / {test_stats['mae']:.4f} \
+                        / {test_stats['pcc']:.4f} / {test_stats['r2']:.4f}")
         
             if args.wandb:
                 wandb.log(test_history)
@@ -449,7 +450,7 @@ def main(args):
     elif args.downstream_task == 'regression':
         eval_criterion = "pcc"
     
-    best_stats = {'loss':np.inf, 'acc':0.0, 'f1':0.0, 'auroc':0.0, 'auprc':0.0, 'rmse':np.inf, 'pcc':0.0}
+    best_stats = {'loss':np.inf, 'acc':0.0, 'f1':0.0, 'auroc':0.0, 'auprc':0.0, 'rmse':np.inf, 'mae':np.inf, 'pcc':0.0, 'r2':-1.0}
     best_eval_scores = {'count':0, 'nb_ckpts_max':5, 'eval_criterion':[best_stats[eval_criterion]]}
     for epoch in range(args.start_epoch, args.epochs):
         start_time = time.time()
@@ -462,7 +463,7 @@ def main(args):
 
         test_stats, test_history = evaluate(data_loader_val, model, device, epoch, log_writer=log_writer, args=args)
 
-        if eval_criterion == "loss" or eval_criterion == "rmse":
+        if eval_criterion == "loss" or eval_criterion == "rmse" or eval_criterion == "mae":
             if early_stop.evaluate_decreasing_metric(val_metric=test_stats[eval_criterion]):
                 break
             if args.output_dir and test_stats[eval_criterion] <= max(best_eval_scores['eval_criterion']):
@@ -499,8 +500,8 @@ def main(args):
         
         if args.downstream_task == 'classification':
             # update best stats
-            best_stats['acc'] = max(best_stats['acc'], test_stats["acc"])
             best_stats['f1'] = max(best_stats['f1'], test_stats['f1'])
+            best_stats['acc'] = max(best_stats['acc'], test_stats["acc"])
             best_stats['auroc'] = max(best_stats['auroc'], test_stats['auroc'])
             best_stats['auprc'] = max(best_stats['auprc'], test_stats['auprc'])
 
@@ -512,12 +513,15 @@ def main(args):
         elif args.downstream_task == 'regression':
             # update best stats
             best_stats['rmse'] = min(best_stats['rmse'], test_stats['rmse'])
+            best_stats['mae'] = min(best_stats['mae'], test_stats['mae'])
             best_stats['pcc'] = max(best_stats['pcc'], test_stats['pcc'])
+            best_stats['r2'] = max(best_stats['r2'], test_stats['r2'])
 
-            print(f"Root Mean Squared Error (RMSE) / Pearson Correlation Coefficient (PCC) of the network on\
-                   the {len(dataset_val)} test images: {test_stats['rmse']:.4f} / {test_stats['pcc']:.4f}")
-            print(f'Min Root Mean Squared Error (RMSE) / Max Pearson Correlation Coefficient:\
-                   {best_stats["rmse"]:.4f} / {best_stats["pcc"]:.4f}\n')
+            print(f"Root Mean Squared Error (RMSE) / Mean Absolute Error (MAE) / Pearson Correlation Coefficient (PCC) / R Squared (R2) \
+                    of the network on the {len(dataset_val)} test images: {test_stats['rmse']:.4f} / {test_stats['mae']:.4f} \
+                    / {test_stats['pcc']:.4f} / {test_stats['r2']:.4f}")
+            print(f'Min Root Mean Squared Error (RMSE) / Min Mean Absolute Error (MAE) / Max Pearson Correlation Coefficient (PCC) / Max R Squared (R2): \
+                   {best_stats["rmse"]:.4f} / {best_stats["mae"]:.4f} / {best_stats["pcc"]:.4f} / {best_stats["r2"]:.4f}\n')
         
         log_stats = {**{f'train_{k}': str(v) for k, v in train_stats.items()},
                         **{f'test_{k}': str(v) for k, v in test_stats.items()},
