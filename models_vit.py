@@ -45,7 +45,8 @@ class VisionTransformer(timm.models.vision_transformer.VisionTransformer):
 
             del self.norm  # remove the original norm        
         
-        self.blocks[-1].attn.forward = self._attention_forward_wrapper(self.blocks[-1].attn)
+        for block in self.blocks:
+            block.attn.forward = self._attention_forward_wrapper(block.attn)
         
     def _attention_forward_wrapper(self, attn_obj):
         """
