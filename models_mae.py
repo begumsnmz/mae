@@ -300,9 +300,9 @@ def mae_vit_tiny_patchX_dec256d2b(**kwargs): # nb_params: 5.36M encoder, 1.7M de
         mlp_ratio=4, norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
     return model
 
-def mae_vit_tinyUp_patchX_dec256d2b(**kwargs): # nb_params: 21.34M encoder, 1.8M decoder
+def mae_vit_tinyDeep_patchX_dec256d2b(**kwargs): # nb_params: 21.34M encoder, 1.8M decoder
     model = MaskedAutoencoderViT(
-        embed_dim=768, depth=3, num_heads=8, # dim=96 per head
+        embed_dim=192, depth=12, num_heads=3, # dim=96 per head
         decoder_embed_dim=256, decoder_depth=2, decoder_num_heads=8, # dim=32 per head
         mlp_ratio=4, norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
     return model
@@ -354,7 +354,7 @@ def mae_vit_huge_patchX_dec512d8b(**kwargs): # 632M params in total
 # set recommended archs
 mae_vit_pluto_patchX = mae_vit_pluto_patchX_dec192d2b  # decoder: 256 dim, 2 blocks
 mae_vit_tiny_patchX = mae_vit_tiny_patchX_dec256d2b  # decoder: 256 dim, 2 blocks
-mae_vit_tinyUp_patchX = mae_vit_tinyUp_patchX_dec256d2b  # decoder: 256 dim, 2 blocks
+mae_vit_tinyDeep_patchX = mae_vit_tinyDeep_patchX_dec256d2b  # decoder: 256 dim, 2 blocks
 mae_vit_small_patchX = mae_vit_small_patchX_dec256d2b  # decoder: 384 dim, 4 blocks
 mae_vit_medium_patchX = mae_vit_medium_patchX_dec256d2b  # decoder: 384 dim, 4 blocks
 mae_vit_large_patchX = mae_vit_large_patchX_dec256d4b  # decoder: 384 dim, 6 blocks
