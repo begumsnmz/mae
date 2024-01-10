@@ -192,9 +192,9 @@ def vit_tiny_patchX(**kwargs):
         norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
     return model
 
-def vit_tinyUp_patchX(**kwargs):
+def vit_tinyDeep_patchX(**kwargs):
     model = VisionTransformer(
-        embed_dim=768, depth=3, num_heads=8, mlp_ratio=4, qkv_bias=True,
+        embed_dim=192, depth=12, num_heads=3, mlp_ratio=4, qkv_bias=True,
         norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
     return model
 
@@ -204,9 +204,21 @@ def vit_small_patchX(**kwargs):
         norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
     return model
 
+def vit_smallDeep_patchX(**kwargs):
+    model = VisionTransformer(
+        embed_dim=384, depth=12, num_heads=6, mlp_ratio=4, qkv_bias=True,
+        norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
+    return model
+
 def vit_medium_patchX(**kwargs):
     model = VisionTransformer(
         embed_dim=640, depth=5, num_heads=10, mlp_ratio=4, qkv_bias=True,
+        norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
+    return model
+
+def vit_mediumDeep_patchX(**kwargs):
+    model = VisionTransformer(
+        embed_dim=576, depth=12, num_heads=8, mlp_ratio=4, qkv_bias=True,
         norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
     return model
 

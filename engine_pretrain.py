@@ -91,16 +91,22 @@ def train_one_epoch(model: torch.nn.Module,
         samples = samples.to(device, non_blocking=True)
 
         with torch.cuda.amp.autocast():
-            loss, samples_hat, samples_hat_masked = model(samples, mask_ratio=args.mask_ratio)
+            loss, loss_cos, cos_embed, z_std, samples_hat, samples_hat_masked = model(samples, mask_ratio=args.mask_ratio)
 
         loss_value = loss.item()
+        loss_cos_value = loss_cos.item()
+        cos_embed_value = cos_embed.item()
+        z_std_value = z_std.item()
 
         if not math.isfinite(loss_value):
             print("Loss is {}, stopping training".format(loss_value))
             sys.exit(1)
 
         loss /= accum_iter
-        loss_scaler(loss, optimizer, parameters=model.parameters(),
+        loss_cos /= accum_iter
+
+        total_loss = loss + args.cos_weight * loss_cos
+        loss_scaler(total_loss, optimizer, parameters=model.parameters(),
                     update_grad=(data_iter_step + 1) % accum_iter == 0)
         if (data_iter_step + 1) % accum_iter == 0:
             optimizer.zero_grad()
@@ -113,6 +119,10 @@ def train_one_epoch(model: torch.nn.Module,
         metric_logger.update(lr=lr)
 
         batch_size = samples.shape[0]
+        metric_logger.meters['loss_cos'].update(loss_cos_value, n=batch_size)
+        metric_logger.meters['cos_embed'].update(cos_embed_value, n=batch_size)
+        metric_logger.meters['z_std'].update(z_std_value, n=batch_size)
+
         normalized_corr = ncc(samples, samples_hat).item()
         metric_logger.meters['ncc'].update(normalized_corr, n=batch_size)
 
@@ -127,6 +137,9 @@ def train_one_epoch(model: torch.nn.Module,
     # tensorboard
     if log_writer is not None:
         log_writer.add_scalar('train/train_loss', train_stats["loss"], epoch)
+        log_writer.add_scalar('train/train_loss_cos', train_stats["loss_cos"], epoch)
+        log_writer.add_scalar('train/train_cos_embed', train_stats["cos_embed"], epoch)
+        log_writer.add_scalar('train/train_z_std', train_stats["z_std"], epoch)
         log_writer.add_scalar('lr', train_stats["lr"], epoch)
         log_writer.add_scalar('train/normalized_corr_coef', train_stats["ncc"], epoch)
 
@@ -134,6 +147,9 @@ def train_one_epoch(model: torch.nn.Module,
     if args.wandb == True:
         training_history['epoch'] = epoch
         training_history['train_loss'] = train_stats["loss"]
+        training_history['train_loss_cos'] = train_stats["loss_cos"]
+        training_history['train_cos_embed'] = train_stats["cos_embed"]
+        training_history['train_z_std'] = train_stats["z_std"]
         training_history['lr'] = train_stats["lr"]
         training_history['Normalized Correlation Coefficient'] = train_stats["ncc"]
 
@@ -185,7 +201,7 @@ def evaluate_online(estimator, model, device, train_dataloader, val_dataloader, 
         with torch.cuda.amp.autocast():
             train_embeddings.append(model.forward_encoder_all_patches(data))
 
-    train_embeddings = torch.cat(train_embeddings, dim=0)[:, 0, :] # [cls] token
+    train_embeddings = torch.cat(train_embeddings, dim=0)[:, 1:, :].mean(dim=1) # globally average pooled token
     train_embeddings = train_embeddings.cpu()
     train_labels = torch.cat(train_labels, dim=0)
     train_labels = train_labels.cpu()
@@ -216,7 +232,7 @@ def evaluate_online(estimator, model, device, train_dataloader, val_dataloader, 
         with torch.cuda.amp.autocast():
             val_embeddings.append(model.forward_encoder_all_patches(data))
 
-    val_embeddings = torch.cat(val_embeddings, dim=0)[:, 0, :] # [cls] token
+    val_embeddings = torch.cat(val_embeddings, dim=0)[:, 1:, :].mean(dim=1) # globally average pooled token
     val_embeddings = val_embeddings.cpu()
     val_labels = torch.cat(val_labels, dim=0)
     val_labels = val_labels.cpu()
@@ -277,13 +293,20 @@ def evaluate(data_loader, model, device, epoch, log_writer=None, args=None):
 
         # compute output
         with torch.cuda.amp.autocast():
-            loss, samples_hat, samples_hat_masked = model(samples, mask_ratio=args.mask_ratio)
+            loss, loss_cos, cos_embed, z_std, samples_hat, samples_hat_masked = model(samples, mask_ratio=args.mask_ratio)
 
         loss_value = loss.item()
-        # batch_size = samples.shape[0]
+        loss_cos_value = loss_cos.item()
+        cos_embed_value = cos_embed.item()
+        z_std_value = z_std.item()
+        
         metric_logger.update(loss=loss_value)
 
         batch_size = samples.shape[0]
+        metric_logger.meters['loss_cos'].update(loss_cos_value, n=batch_size)
+        metric_logger.meters['cos_embed'].update(cos_embed_value, n=batch_size)
+        metric_logger.meters['z_std'].update(z_std_value, n=batch_size)
+
         normalized_corr = ncc(samples, samples_hat).item()
         metric_logger.meters['ncc'].update(normalized_corr, n=batch_size)
 
@@ -296,12 +319,18 @@ def evaluate(data_loader, model, device, epoch, log_writer=None, args=None):
     # tensorboard
     if log_writer is not None:
         log_writer.add_scalar('val/val_loss', test_stats["loss"], epoch)
+        log_writer.add_scalar('val/val_loss_cos', test_stats["loss_cos"], epoch)
+        log_writer.add_scalar('val/val_cos_embed', test_stats["cos_embed"], epoch)
+        log_writer.add_scalar('val/val_z_std', test_stats["z_std"], epoch)
         log_writer.add_scalar('val/val_normalized_corr_coef', test_stats["ncc"], epoch)
 
     # wandb
     if args.wandb == True:
         test_history['epoch'] = epoch
         test_history['val_loss'] = test_stats["loss"]
+        test_history['val_loss_cos'] = test_stats["loss_cos"]
+        test_history['val_cos_embed'] = test_stats["cos_embed"]
+        test_history['val_z_std'] = test_stats["z_std"]
         test_history['Val Normalized Correlation Coefficient'] = test_stats["ncc"]
 
     return test_stats, test_history

@@ -71,6 +71,8 @@ def get_args_parser():
 
     parser.add_argument('--ncc_weight', type=float, default=0.1,
                         help='Add normalized cross-correlation (ncc) as additional loss term')
+    parser.add_argument('--cos_weight', type=float, default=0.1,
+                        help='Add cos similarity as additional loss term')
 
     # Augmentation parameters
     parser.add_argument('--mask_ratio', default=0.75, type=float,
