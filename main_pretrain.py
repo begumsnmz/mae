@@ -28,7 +28,6 @@ import timm.optim.optim_factory as optim_factory
 import util.misc as misc
 from util.misc import NativeScalerWithGradNormCount as NativeScaler
 from util.callbacks import EarlyStop
-from util.metrics import update_best_stats
 
 import models_mae
 from sklearn.linear_model import LogisticRegression, LinearRegression
@@ -72,6 +71,8 @@ def get_args_parser():
 
     parser.add_argument('--ncc_weight', type=float, default=0.1,
                         help='Add normalized cross-correlation (ncc) as additional loss term')
+    parser.add_argument('--cos_weight', type=float, default=0.1,
+                        help='Add cos similarity as additional loss term')
 
     # Augmentation parameters
     parser.add_argument('--mask_ratio', default=0.75, type=float,
@@ -318,8 +319,9 @@ def main(args):
     print(f"Start training for {args.epochs} epochs")
 
     eval_criterion = "ncc"
-    best_stats = {'loss':[np.inf], 'ncc':[0.0]}
-    max_len_best_stats = 5
+    
+    best_stats = {'loss':np.inf, 'ncc':0.0}
+    best_eval_scores = {'count':0, 'nb_ckpts_max':5, 'eval_criterion':[best_stats[eval_criterion]]}
     for epoch in range(args.start_epoch, args.epochs):
         start_time = time.time()
 
@@ -334,7 +336,8 @@ def main(args):
         #         loss_scaler=loss_scaler, epoch=epoch)
 
         val_stats, test_history = evaluate(data_loader_val, model, device, epoch, log_writer=log_writer, args=args)
-        print(f"Loss / Normalized CC of the network on the {len(dataset_val)} val images: {val_stats['loss']:.4f} / {val_stats['ncc']:.2f}")
+        print(f"Loss / Normalized CC of the network on the {len(dataset_val)} val images: {val_stats['loss']:.4f}\
+               / {val_stats['ncc']:.2f}")
 
         # online evaluation of the downstream task
         online_history = {}
@@ -343,13 +346,25 @@ def main(args):
                 online_estimator = LogisticRegression(class_weight='balanced', max_iter=2000)
             elif args.online_evaluation_task == "regression":
                 online_estimator = LinearRegression()
-            online_history = evaluate_online(estimator=online_estimator, model=model, device=device, train_dataloader=data_loader_online_train, 
+            online_history = evaluate_online(estimator=online_estimator, model=model, device=device, 
+                                             train_dataloader=data_loader_online_train, 
                                              val_dataloader=data_loader_online_val, args=args)
 
+        best_stats['loss'] = min(best_stats['loss'], val_stats['loss'])
+        best_stats['ncc'] = max(best_stats['ncc'], val_stats['ncc'])
+        
         if eval_criterion == "loss":
             if early_stop.evaluate_decreasing_metric(val_metric=val_stats[eval_criterion]):
                 break
-            if args.output_dir and val_stats[eval_criterion] <= max(best_stats[eval_criterion]):
+            if args.output_dir and val_stats[eval_criterion] <= max(best_eval_scores['eval_criterion']):
+                # save the best 5 (nb_ckpts_max) checkpoints, even if they appear after the best checkpoint wrt time
+                if best_eval_scores['count'] < best_eval_scores['nb_ckpts_max']:
+                    best_eval_scores['count'] += 1
+                else:
+                    best_eval_scores['eval_criterion'] = sorted(best_eval_scores['eval_criterion'])
+                    best_eval_scores['eval_criterion'].pop()
+                best_eval_scores['eval_criterion'].append(val_stats[eval_criterion])
+
                 misc.save_best_model(
                     args=args, model=model, model_without_ddp=model_without_ddp, optimizer=optimizer,
                     loss_scaler=loss_scaler, epoch=epoch, test_stats=val_stats, evaluation_criterion=eval_criterion, 
@@ -357,17 +372,21 @@ def main(args):
         else:
             if early_stop.evaluate_increasing_metric(val_metric=val_stats[eval_criterion]):
                 break
-            if args.output_dir and val_stats[eval_criterion] >= min(best_stats[eval_criterion]):
+            if args.output_dir and val_stats[eval_criterion] >= min(best_eval_scores['eval_criterion']):
+                # save the best 5 (nb_ckpts_max) checkpoints, even if they appear after the best checkpoint wrt time
+                if best_eval_scores['count'] < best_eval_scores['nb_ckpts_max']:
+                    best_eval_scores['count'] += 1
+                else:
+                    best_eval_scores['eval_criterion'] = sorted(best_eval_scores['eval_criterion'], reverse=True)
+                    best_eval_scores['eval_criterion'].pop()
+                best_eval_scores['eval_criterion'].append(val_stats[eval_criterion])
+
                 misc.save_best_model(
                     args=args, model=model, model_without_ddp=model_without_ddp, optimizer=optimizer,
                     loss_scaler=loss_scaler, epoch=epoch, test_stats=val_stats, evaluation_criterion=eval_criterion, 
                     mode="increasing")
-
-        best_stats['loss'] = update_best_stats(best_stats['loss'], val_stats['loss'], max_len_best_stats, mode="decreasing")
-        best_stats['ncc'] = update_best_stats(best_stats['ncc'], val_stats['ncc'], max_len_best_stats, mode="increasing")
             
-        log_stats = {**{f'train_{k}': v for k, v in train_stats.items()},
-                        'epoch': epoch,}
+        log_stats = {**{f'train_{k}': v for k, v in train_stats.items()}, 'epoch': epoch,}
 
         if args.output_dir and misc.is_main_process():
             if log_writer:

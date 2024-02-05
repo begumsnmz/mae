@@ -67,7 +67,7 @@ class TimeToFourier(object):
     """
         Go from time domain to frequency domain.
     """
-    def __init__(self, factor=1, return_half=False, unsqueeze=False) -> None:
+    def __init__(self, factor=1, return_half=False, unsqueeze=True) -> None:
         super().__init__()
         self.factor = factor
         self.return_half = return_half
@@ -86,8 +86,8 @@ class TimeToFourier(object):
         X_f_complex = torch.Tensor()
 
         if self.unsqueeze == False:
-            # # if you want real and imag part to be concatenated 
-            # # such that the output has shape [ch*2, time_steps]
+            # if you want real and imag part to be concatenated 
+            # such that the output has shape [ch*2, time_steps]
             if sample_dims == 2:
                 for ch in range(X_f.shape[0]):
                     real_part = torch.real(X_f[ch, :]).unsqueeze(dim=0)
@@ -99,24 +99,24 @@ class TimeToFourier(object):
                     # concatenate the channels 
                     X_f_complex = torch.cat((X_f_complex, complex_pair), dim=0)
             elif sample_dims == 3:
-                    for bin in range(X_f.shape[0]):
-                        X_f_bin_complex = torch.Tensor()
-                        
-                        for ch in range(X_f.shape[1]):
-                            real_part = torch.real(X_f[bin, ch, :]).unsqueeze(dim=0)
-                            imag_part = torch.imag(X_f[bin, ch, :]).unsqueeze(dim=0)
+                for bin in range(X_f.shape[0]):
+                    X_f_bin_complex = torch.Tensor()
+                    
+                    for ch in range(X_f.shape[1]):
+                        real_part = torch.real(X_f[bin, ch, :]).unsqueeze(dim=0)
+                        imag_part = torch.imag(X_f[bin, ch, :]).unsqueeze(dim=0)
 
-                            # concatenate the real and imaginary parts 
-                            complex_pair = torch.cat((real_part, imag_part), dim=0)#.unsqueeze(dim=0)
+                        # concatenate the real and imaginary parts 
+                        complex_pair = torch.cat((real_part, imag_part), dim=0)#.unsqueeze(dim=0)
 
-                            # concatenate the channels
-                            X_f_bin_complex = torch.cat((X_f_bin_complex, complex_pair), dim=0)
+                        # concatenate the channels
+                        X_f_bin_complex = torch.cat((X_f_bin_complex, complex_pair), dim=0)
 
-                        # concatenate the frequency bins
-                        X_f_complex = torch.cat((X_f_complex, X_f_bin_complex.unsqueeze(dim=0)), dim=0)
+                    # concatenate the frequency bins
+                    X_f_complex = torch.cat((X_f_complex, X_f_bin_complex.unsqueeze(dim=0)), dim=0)
         else:
-            # # if you want real and imag part to be concatenated 
-            # # such that the output has shape [2, ch, time_steps]
+            # if you want real and imag part to be concatenated 
+            # such that the output has shape [2, ch, time_steps]
             X_f_complex = X_f.unsqueeze(dim=-3)
             X_f_real = torch.real(X_f_complex)
             X_f_imag = torch.imag(X_f_complex)

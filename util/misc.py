@@ -329,15 +329,10 @@ def save_best_model(args, epoch, model, model_without_ddp, optimizer, loss_scale
     if len(file_names) >= 5:
         # file_names = sorted(file_names, key=lambda str: int(re.search(r'\d+', str).group()))
         if mode == "increasing":
-            file_names = sorted(file_names, key=lambda x: float(x.split(".pth")[0].split("-")[-1]))
-        else: # decreasing
             file_names = sorted(file_names, key=lambda x: float(x.split(".pth")[0].split("-")[-1]), reverse=True)
-        os.remove(os.path.join(output_dir, file_names[0]))
-
-    # # only save the best performing model
-    # for file in file_names:
-    #     if "log.txt" not in file:
-    #         os.remove(os.path.join(output_dir, file))
+        else: # decreasing
+            file_names = sorted(file_names, key=lambda x: float(x.split(".pth")[0].split("-")[-1]))
+        os.remove(os.path.join(output_dir, file_names[-1]))
 
     if loss_scaler is not None:
         checkpoint_paths = [output_dir / (f"checkpoint-{epoch_name}-{evaluation_criterion}-{test_stats[evaluation_criterion]:.4f}.pth")]
@@ -353,7 +348,9 @@ def save_best_model(args, epoch, model, model_without_ddp, optimizer, loss_scale
             save_on_master(to_save, checkpoint_path)
     else:
         client_state = {'epoch': epoch}
-        model.save_checkpoint(save_dir=args.output_dir, tag=f"checkpoint-{epoch_name}-{evaluation_criterion}-{test_stats[evaluation_criterion]:.4f}.pth", client_state=client_state)
+        model.save_checkpoint(save_dir=args.output_dir, 
+                              tag=f"checkpoint-{epoch_name}-{evaluation_criterion}-{test_stats[evaluation_criterion]:.4f}.pth", 
+                              client_state=client_state)
 
 def load_model(args, model_without_ddp, optimizer, loss_scaler):
     if args.resume:

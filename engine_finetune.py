@@ -17,7 +17,8 @@ from typing import Iterable, Optional
 
 import torch
 
-from sklearn.metrics import roc_auc_score, f1_score, accuracy_score, average_precision_score, mean_squared_error
+from sklearn.metrics import roc_auc_score, f1_score, accuracy_score, average_precision_score
+from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 from sklearn.feature_selection import r_regression
 
 import wandb
@@ -130,8 +131,14 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
         rmse = mean_squared_error(logits, labels, multioutput="raw_values", squared=False)
         training_stats["rmse"] = rmse.mean(axis=-1)
 
+        mae = mean_absolute_error(logits, labels, multioutput="raw_values")
+        training_stats["mae"] = mae.mean(axis=-1)
+
         pcc = np.concatenate([r_regression(logits[:, i].view(-1, 1), labels[:, i]) for i in range(labels.shape[-1])], axis=0)
         training_stats["pcc"] = pcc.mean(axis=-1)
+
+        r2 = np.stack([r2_score(labels[:, i], logits[:, i]) for i in range(labels.shape[-1])], axis=0)
+        training_stats["r2"] = r2.mean(axis=-1)
 
     # tensorboard
     if log_writer is not None: #and (data_iter_step + 1) % accum_iter == 0:
@@ -149,7 +156,9 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
             log_writer.add_scalar('perf/train_auprc', auprc, epoch)
         elif args.downstream_task == 'regression':
             log_writer.add_scalar('perf/train_rmse', training_stats["rmse"], epoch)
+            log_writer.add_scalar('perf/train_mae', training_stats["mae"], epoch)
             log_writer.add_scalar('perf/train_pcc', training_stats["pcc"], epoch)
+            log_writer.add_scalar('perf/train_r2', training_stats["r2"], epoch)
 
     # wandb
     if args.wandb == True:
@@ -163,11 +172,15 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
             training_history['auprc'] = auprc
         elif args.downstream_task == 'regression':
             training_history['rmse'] = training_stats["rmse"]
+            training_history['mae'] = training_stats["mae"]
             training_history['pcc'] = training_stats["pcc"]
+            training_history['r2'] = training_stats["r2"]
 
             for i in range(targets.shape[-1]):
                 training_history[f'Train/RMSE/{i}'] = rmse[i]
+                training_history[f'Train/MAE/{i}'] = mae[i]
                 training_history[f'Train/PCC/{i}'] = pcc[i]
+                training_history[f'Train/R2/{i}'] = r2[i]
 
     return training_stats, training_history
 
@@ -264,15 +277,21 @@ def evaluate(data_loader, model, device, epoch, log_writer=None, args=None):
         rmse = mean_squared_error(logits, labels, multioutput="raw_values", squared=False)
         test_stats["rmse"] = rmse.mean(axis=-1)
 
+        mae = mean_absolute_error(logits, labels, multioutput="raw_values")
+        test_stats["mae"] = mae.mean(axis=-1)
+
         pcc = np.concatenate([r_regression(logits[:, i].view(-1, 1), labels[:, i]) for i in range(labels.shape[-1])], axis=0)
         test_stats["pcc"] = pcc.mean(axis=-1)
+
+        r2 = np.stack([r2_score(labels[:, i], logits[:, i]) for i in range(labels.shape[-1])], axis=0)
+        test_stats["r2"] = r2.mean(axis=-1)
 
     if args.downstream_task == 'classification':
         print('* Acc@1 {top1_acc:.3f} F1 {f1:.3f} AUROC {auroc:.3f} AUPRC {auprc:.3f} loss {losses:.3f}'
             .format(top1_acc=acc, f1=f1, auroc=auc, auprc=auprc, losses=test_stats["loss"]))
     elif args.downstream_task == 'regression':
-        print('* RMSE {rmse:.3f} PCC {pcc:.2f} loss {losses:.3f}'
-            .format(rmse=test_stats["rmse"], pcc=test_stats["pcc"], losses=test_stats["loss"]))
+        print('* RMSE {rmse:.3f} MAE {mae:.3f} PCC {pcc:.3f} R2 {r2:.3f} loss {losses:.3f}'
+            .format(rmse=test_stats["rmse"], mae=test_stats["mae"], pcc=test_stats["pcc"], r2=test_stats["r2"], losses=test_stats["loss"]))
 
     # tensorboard
     if log_writer is not None:
@@ -283,24 +302,30 @@ def evaluate(data_loader, model, device, epoch, log_writer=None, args=None):
             log_writer.add_scalar('perf/test_auprc', auprc, epoch)
         elif args.downstream_task == 'regression':
             log_writer.add_scalar('perf/test_rmse', test_stats['rmse'], epoch)
+            log_writer.add_scalar('perf/test_mae', test_stats['mae'], epoch)
             log_writer.add_scalar('perf/test_pcc', test_stats['pcc'], epoch)
+            log_writer.add_scalar('perf/test_r2', test_stats['r2'], epoch)
         log_writer.add_scalar('perf/test_loss', test_stats['loss'], epoch)
 
     # wandb
     if args.wandb == True:
         test_history = {'epoch' : epoch, 'test_loss' : test_stats['loss']}
         if args.downstream_task == 'classification':
-            test_history['test_acc'] = acc
             test_history['test_f1'] = f1
+            test_history['test_acc'] = acc
             test_history['test_auroc'] = auc
             test_history['test_auprc'] = auprc
         elif args.downstream_task == 'regression':
             test_history['test_rmse'] = test_stats['rmse']
+            test_history['test_mae'] = test_stats['mae']
             test_history['test_pcc'] = test_stats['pcc']
+            test_history['test_r2'] = test_stats['r2']
 
             for i in range(target.shape[-1]):
                 test_history[f'Test/RMSE/{i}'] = rmse[i]
+                test_history[f'Test/MAE/{i}'] = mae[i]
                 test_history[f'Test/PCC/{i}'] = pcc[i]
+                test_history[f'Test/R2/{i}'] = r2[i]
 
         if args.plot_embeddings and epoch % 10 == 0:
             reducer = umap.UMAP(n_components=2, metric='euclidean')
