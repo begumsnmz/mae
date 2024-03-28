@@ -255,9 +255,9 @@ def main(args):
     if args.wandb == True:
         config = vars(args)
         if args.wandb_id:
-            wandb.init(project=args.wandb_project, id=args.wandb_id, config=config, entity="oturgut")
+            wandb.init(project=args.wandb_project, id=args.wandb_id, config=config, entity="begum-soenmez")
         else:
-            wandb.init(project=args.wandb_project, config=config, entity="oturgut")
+            wandb.init(project=args.wandb_project, config=config, entity="begum-soenmez")
 
     data_loader_train = torch.utils.data.DataLoader(
         dataset_train, 

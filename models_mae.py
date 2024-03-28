@@ -203,12 +203,15 @@ class MaskedAutoencoderViT(nn.Module):
 
         return x, mask, ids_restore
 
-    def forward_encoder_all_patches(self, x):
+    def forward_encoder_all_patches(self, x, mask_ratio):
         # embed patches
         x = self.patch_embed(x)
 
         # add pos embed w/o cls token
         x = x + self.pos_embed[:, 1:, :]
+
+        # masking: length -> length * mask_ratio
+        x, _, _= self.random_masking(x, mask_ratio)
 
         # append cls token
         cls_token = self.cls_token + self.pos_embed[:, :1, :]
@@ -283,7 +286,7 @@ class MaskedAutoencoderViT(nn.Module):
         # REGULARIZATION (using normalized correlation coefficient of the actual signals)
         imgs_hat = self.unpatchify(pred)
         target_normalized = (imgs - imgs.mean(dim=-1, keepdim=True)) / (imgs.var(dim=-1, keepdim=True) + 1e-12)**0.5
-        pred_normalized = (imgs_hat - imgs_hat.var(dim=-1, keepdim=True)) / (imgs_hat.var(dim=-1, keepdim=True) + 1e-12)**0.5
+        pred_normalized = (imgs_hat - imgs_hat.mean(dim=-1, keepdim=True)) / (imgs_hat.var(dim=-1, keepdim=True) + 1e-12)**0.5
 
         nb_of_signals = 1
         for dim in range(imgs.dim()-1): # all but the last dimension (which is the actual signal)

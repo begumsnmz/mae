@@ -179,7 +179,7 @@ def train_one_epoch(model: torch.nn.Module,
             plt.subplot(616)
             plt.plot(range(0, x.shape[-1], 1), x_hat_masked[f_bin, 5, :])
             plt.tight_layout()
-            training_history["Reconstruction"] = wandb.Image(plt)
+            training_history["Reconstruction Train"] = wandb.Image(plt)
 
     return train_stats, training_history
 
@@ -189,6 +189,9 @@ def evaluate_online(estimator, model, device, train_dataloader, val_dataloader, 
     model.eval()
 
     online_history = {}
+
+    train_labels_mean = args.train_labels_mean
+    train_labels_std = args.train_labels_std
     
     # training
     train_embeddings = []
@@ -199,7 +202,7 @@ def evaluate_online(estimator, model, device, train_dataloader, val_dataloader, 
         train_labels.append(label.to(device, non_blocking=True))
 
         with torch.cuda.amp.autocast():
-            train_embeddings.append(model.forward_encoder_all_patches(data))
+            train_embeddings.append(model.forward_encoder_all_patches(data, args.mask_ratio))
 
     train_embeddings = torch.cat(train_embeddings, dim=0)[:, 1:, :].mean(dim=1) # globally average pooled token
     train_embeddings = train_embeddings.cpu()
@@ -216,11 +219,24 @@ def evaluate_online(estimator, model, device, train_dataloader, val_dataloader, 
         classifier_auprc_train = average_precision_score(y_true=torch.nn.functional.one_hot(train_labels, num_classes=-1), y_score=train_probs, pos_label=1)
     elif args.online_evaluation_task == "regression":
         train_preds = torch.tensor(estimator.predict(train_embeddings), dtype=torch.float16)
+
+        #Additional metric: MAE in years
+        #Rescale preds and labels
+        train_preds_rescaled = train_preds * train_labels_std + train_labels_mean  
+        train_labels_rescaled = train_labels * train_labels_std + train_labels_mean  
+
         classifier_rmse_train = mean_squared_error(train_preds, train_labels, multioutput="raw_values", squared=False)
         classifier_mae_train = mean_absolute_error(train_preds, train_labels, multioutput="raw_values")
         classifier_pcc_train = np.concatenate([r_regression(train_preds[:, i].view(-1, 1), train_labels[:, i]) for i in range(train_labels.shape[-1])], axis=0)
         classifier_r2_train = np.stack([r2_score(train_labels[:, i], train_preds[:, i]) for i in range(train_labels.shape[-1])], axis=0)
 
+        
+        classifier_mae_train_years = mean_absolute_error(train_preds_rescaled, train_labels_rescaled, multioutput="raw_values")
+   
+        abs_errors_train = torch.abs(train_preds_rescaled - train_labels_rescaled)
+        classifier_mae_train_std_years = torch.std(abs_errors_train, dim=0, unbiased=True).mean().item()
+
+        
     # validation
     val_embeddings = []
     val_labels = []
@@ -230,7 +246,7 @@ def evaluate_online(estimator, model, device, train_dataloader, val_dataloader, 
         val_labels.append(label.to(device, non_blocking=True))
 
         with torch.cuda.amp.autocast():
-            val_embeddings.append(model.forward_encoder_all_patches(data))
+            val_embeddings.append(model.forward_encoder_all_patches(data, args.mask_ratio))
 
     val_embeddings = torch.cat(val_embeddings, dim=0)[:, 1:, :].mean(dim=1) # globally average pooled token
     val_embeddings = val_embeddings.cpu()
@@ -249,6 +265,17 @@ def evaluate_online(estimator, model, device, train_dataloader, val_dataloader, 
         classifier_mae_val = mean_absolute_error(val_preds, val_labels, multioutput="raw_values")
         classifier_pcc_val = np.concatenate([r_regression(val_preds[:, i].view(-1, 1), val_labels[:, i]) for i in range(val_labels.shape[-1])], axis=0)
         classifier_r2_val = np.stack([r2_score(val_labels[:, i], val_preds[:, i]) for i in range(val_labels.shape[-1])], axis=0)
+
+        #Additional Metric: MAE in years
+        #Rescale predictions and labels
+        val_preds_rescaled = val_preds * train_labels_std + train_labels_mean  
+        val_labels_rescaled = val_labels * train_labels_std + train_labels_mean  
+
+        classifier_mae_val_years = mean_absolute_error(val_preds_rescaled, val_labels_rescaled, multioutput="raw_values")
+        
+        abs_errors_val = torch.abs(val_preds_rescaled - val_labels_rescaled)
+        classifier_mae_val_std_years = torch.std(abs_errors_val, dim=0, unbiased=True).mean().item()
+
 
     # stats
     if args.online_evaluation_task == "classification":
@@ -271,6 +298,15 @@ def evaluate_online(estimator, model, device, train_dataloader, val_dataloader, 
         online_history['online/val_mae'] = classifier_mae_val.mean(axis=-1)
         online_history['online/val_pcc'] = classifier_pcc_val.mean(axis=-1)
         online_history['online/val_r2'] = classifier_r2_val.mean(axis=-1)
+
+        #Additional Metric: MAE in Years
+        #train
+        online_history['online/train_mae_years'] = classifier_mae_train_years.mean(axis=-1)
+        online_history['online/train_mae_std_years'] = classifier_mae_train_std_years 
+        #validation
+        online_history['online/val_mae_years'] = classifier_mae_val_years.mean(axis=-1)
+        online_history['online/val_mae_std_years'] = classifier_mae_val_std_years  
+
 
     return online_history
 
@@ -332,5 +368,32 @@ def evaluate(data_loader, model, device, epoch, log_writer=None, args=None):
         test_history['val_cos_embed'] = test_stats["cos_embed"]
         test_history['val_z_std'] = test_stats["z_std"]
         test_history['Val Normalized Correlation Coefficient'] = test_stats["ncc"]
+
+        if (epoch % 10) == 0:
+            steps = 1
+            x = samples[0, ..., ::steps].detach().cpu().numpy()
+            x_hat = samples_hat[0, ..., ::steps].detach().cpu().numpy()
+            x_hat_masked = samples_hat_masked[0, ..., ::steps].detach().cpu().numpy()
+
+            # samples of shape (Batch, Freq, Channel, Time)
+            if samples.shape[1] > 1:
+                f_bin = 2
+            else:
+                f_bin = 0
+            plt.close('all')
+            plt.subplot(611)
+            plt.plot(range(0, x.shape[-1], 1), x[0, 0, :])
+            plt.subplot(612)
+            plt.plot(range(0, x.shape[-1], 1), x_hat[0, 0, :])
+            plt.subplot(613)
+            plt.plot(range(0, x.shape[-1], 1), x_hat_masked[0, 0, :])
+            plt.subplot(614)
+            plt.plot(range(0, x.shape[-1], 1), x[f_bin, 5, :])
+            plt.subplot(615)
+            plt.plot(range(0, x.shape[-1], 1), x_hat[f_bin, 5, :])
+            plt.subplot(616)
+            plt.plot(range(0, x.shape[-1], 1), x_hat_masked[f_bin, 5, :])
+            plt.tight_layout()
+            test_history["Reconstruction Val"] = wandb.Image(plt)
 
     return test_stats, test_history

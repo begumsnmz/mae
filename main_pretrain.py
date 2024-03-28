@@ -31,6 +31,7 @@ from util.callbacks import EarlyStop
 
 import models_mae
 from sklearn.linear_model import LogisticRegression, LinearRegression
+from sklearn.metrics import mean_absolute_error
 
 from engine_pretrain import train_one_epoch, evaluate_online, evaluate
 
@@ -65,6 +66,18 @@ def get_args_parser():
                         help='patch width')
     parser.add_argument('--patch_size', default=(65, 200), type=Tuple,
                         help='patch size')
+    
+    # Label statistics
+    parser.add_argument('--train_labels_mean', type=float, default=0.0,
+                        help='Mean value of training labels set')
+    parser.add_argument('--train_labels_std', type=float, default=1.0,
+                        help='stdeof training labels set')
+    
+    ##Overfit Case params
+    parser.add_argument('--overfit', type=bool, default=False,
+                        help='Overfitting case')
+    parser.add_argument('--overfit_sample_size', default=10, type=int,
+                        help='number of samples to overfit')
 
     parser.add_argument('--norm_pix_loss', action='store_true', default=False,
                         help='Use (per-patch) normalized pixels as targets for computing loss')
@@ -113,7 +126,7 @@ def get_args_parser():
     parser.add_argument('--val_data_path', default='', type=str,
                         help='validation dataset path')
     
-    parser.add_argument('--online_evaluation', action='store_true', default=False,
+    parser.add_argument('--online_evaluation', action='store_true', default=True,
                         help='Perform online evaluation of a downstream task')
     parser.add_argument('--online_evaluation_task', default='classification', type=str,
                         help='Online downstream task (default: classification)')
@@ -143,11 +156,13 @@ def get_args_parser():
                         help='path where to save, empty for no saving')
     parser.add_argument('--log_dir', default='',
                         help='path where to tensorboard log (default: ./logs)')
-    parser.add_argument('--wandb', action='store_true', default=False)
+    parser.add_argument('--wandb', action='store_true', default=True)
     parser.add_argument('--wandb_project', default='',
                         help='project where to wandb log')
     parser.add_argument('--wandb_id', default='', type=str,
                         help='id of the current run')
+    parser.add_argument('--wandb_name', default='', type=str,
+                        help= 'name of the current run')
     parser.add_argument('--device', default='cuda',
                         help='device to use for training / testing')
     parser.add_argument('--seed', default=0, type=int)
@@ -220,9 +235,10 @@ def main(args):
     if args.wandb == True:
         config = vars(args)
         if args.wandb_id:
-            wandb.init(project=args.wandb_project, id=args.wandb_id, config=config, entity="oturgut")
+            wandb.init(project=args.wandb_project, name= args.wandb_name, id=args.wandb_id, config=config, entity="begum-soenmez")
         else:
-            wandb.init(project=args.wandb_project, config=config, entity="oturgut")
+            #wandb.init(project=args.wandb_project, name=args.wandb_name, config=config, entity="begum-soenmez")
+            wandb.init(project=args.wandb_project, config=config, entity="begum-soenmez")
 
     data_loader_train = torch.utils.data.DataLoader(
         dataset_train, 
@@ -249,6 +265,17 @@ def main(args):
         dataset_online_train = SignalDataset(data_path=args.data_path_online, labels_path=args.labels_path_online, 
                                              labels_mask_path=args.labels_mask_path_online, 
                                              downstream_task=args.online_evaluation_task, train=True, args=args)
+        #Random guessing stats
+        labels_denorm = dataset_online_train.labels * args.train_labels_std + args.train_labels_mean
+        random_guess = torch.ones_like(labels_denorm)*args.train_labels_mean
+        MAE_random_guess = mean_absolute_error(random_guess, labels_denorm, multioutput="raw_values")
+
+        abs_errors_random= torch.abs(random_guess - labels_denorm)
+        std_random_guess = torch.std(abs_errors_random, dim=0, unbiased=True).mean().item()
+
+        print("Random guess MAE: " ,MAE_random_guess)
+        print("Random guess std: " ,std_random_guess)
+
         dataset_online_val = SignalDataset(data_path=args.val_data_path_online, labels_path=args.val_labels_path_online, 
                                            labels_mask_path=args.val_labels_mask_path_online, 
                                            downstream_task=args.online_evaluation_task, train=False, args=args)
@@ -404,4 +431,9 @@ if __name__ == '__main__':
     args = args.parse_args()
     if args.output_dir:
         Path(args.output_dir).mkdir(parents=True, exist_ok=True)
+    else:
+        directory_name = f"/vol/aimspace/users/soeb/EXP1_output_pretrain_lemon/MIN_Pretrain_BATCH{args.batch_size}_BLR{args.blr}"
+        Path(directory_name).mkdir(parents=True, exist_ok=True)
+
+        args.output_dir = directory_name
     main(args)

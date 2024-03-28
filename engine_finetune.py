@@ -114,6 +114,11 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
     logits = torch.cat(logits, dim=0).to(device="cpu", dtype=torch.float32).detach()    # (B, num_classes)
     probs = torch.nn.functional.softmax(logits, dim=-1)                                 # (B, num_classes)
     labels = torch.cat(labels, dim=0).to(device="cpu").detach()                         # (B, 1)
+
+    #Additional metric: MAE in years
+    # Rescale logits and labels to their original scale using the mean and std of the training labels
+    rescaled_logits = logits * args.train_labels_std + args.train_labels_mean
+    rescaled_labels = labels * args.train_labels_std + args.train_labels_mean
     
     training_stats = {k: meter.global_avg for k, meter in metric_logger.meters.items()}
     if args.downstream_task == 'classification':
@@ -133,6 +138,15 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
 
         mae = mean_absolute_error(logits, labels, multioutput="raw_values")
         training_stats["mae"] = mae.mean(axis=-1)
+
+        # Additional Metric: MAE in years
+        # Calculate the rescaled MAE and its standard deviation
+        mae_rescaled = mean_absolute_error(rescaled_logits, rescaled_labels, multioutput="raw_values")
+        training_stats["mae_years"] = mae_rescaled.mean(axis=-1)
+
+        ae_rescaled = torch.abs(rescaled_logits - rescaled_labels)
+        std_ae_rescaled = torch.std(ae_rescaled, axis=0)
+        training_stats["std_mae_years"] = std_ae_rescaled.mean(axis=-1)
 
         pcc = np.concatenate([r_regression(logits[:, i].view(-1, 1), labels[:, i]) for i in range(labels.shape[-1])], axis=0)
         training_stats["pcc"] = pcc.mean(axis=-1)
@@ -159,6 +173,9 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
             log_writer.add_scalar('perf/train_mae', training_stats["mae"], epoch)
             log_writer.add_scalar('perf/train_pcc', training_stats["pcc"], epoch)
             log_writer.add_scalar('perf/train_r2', training_stats["r2"], epoch)
+            #Additional Metric: MAE in years
+            log_writer.add_scalar('perf/train_mae_years', training_stats["mae_years"], epoch)
+            log_writer.add_scalar('perf/train_std_mae_years', training_stats["std_mae_years"], epoch)
 
     # wandb
     if args.wandb == True:
@@ -175,12 +192,17 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
             training_history['mae'] = training_stats["mae"]
             training_history['pcc'] = training_stats["pcc"]
             training_history['r2'] = training_stats["r2"]
+            #Additional Metric: MAE in years
+            training_history['mae_years'] = training_stats["mae_years"]
+            training_history['std_mae_years'] = training_stats["std_mae_years"]
 
             for i in range(targets.shape[-1]):
                 training_history[f'Train/RMSE/{i}'] = rmse[i]
                 training_history[f'Train/MAE/{i}'] = mae[i]
                 training_history[f'Train/PCC/{i}'] = pcc[i]
                 training_history[f'Train/R2/{i}'] = r2[i]
+                training_history[f'Train/MAE_years/{i}'] = mae_rescaled[i]
+                training_history[f'Train/std_MAE_years/{i}'] = std_ae_rescaled[i]
 
     return training_stats, training_history
 
@@ -252,6 +274,11 @@ def evaluate(data_loader, model, device, epoch, log_writer=None, args=None):
     logits = torch.cat(logits, dim=0).to(device="cpu", dtype=torch.float32).detach()    # (B, num_classes)
     probs = torch.nn.functional.softmax(logits, dim=-1)                                 # (B, num_classes)
     labels = torch.cat(labels, dim=0).to(device="cpu").detach()                         # (B, 1)
+
+    #Additional metric: MAE in years
+    # Rescale logits and labels to their original scale using the mean and std of the training labels
+    rescaled_logits = logits * args.train_labels_std + args.train_labels_mean
+    rescaled_labels = labels * args.train_labels_std + args.train_labels_mean
     
     if args.save_logits:
         logits_path = os.path.join(args.output_dir, "logits")
@@ -280,6 +307,15 @@ def evaluate(data_loader, model, device, epoch, log_writer=None, args=None):
         mae = mean_absolute_error(logits, labels, multioutput="raw_values")
         test_stats["mae"] = mae.mean(axis=-1)
 
+        # Additional Metric: MAE in years
+        # Calculate the rescaled MAE and its standard deviation
+        mae_rescaled = mean_absolute_error(rescaled_logits, rescaled_labels, multioutput="raw_values")
+        test_stats["mae_years"] = mae_rescaled.mean(axis=-1)
+
+        ae_rescaled = torch.abs(rescaled_logits - rescaled_labels)
+        std_ae_rescaled = torch.std(ae_rescaled, axis=0)
+        test_stats["std_mae_years"] = std_ae_rescaled.mean(axis=-1)
+
         pcc = np.concatenate([r_regression(logits[:, i].view(-1, 1), labels[:, i]) for i in range(labels.shape[-1])], axis=0)
         test_stats["pcc"] = pcc.mean(axis=-1)
 
@@ -290,8 +326,9 @@ def evaluate(data_loader, model, device, epoch, log_writer=None, args=None):
         print('* Acc@1 {top1_acc:.3f} F1 {f1:.3f} AUROC {auroc:.3f} AUPRC {auprc:.3f} loss {losses:.3f}'
             .format(top1_acc=acc, f1=f1, auroc=auc, auprc=auprc, losses=test_stats["loss"]))
     elif args.downstream_task == 'regression':
-        print('* RMSE {rmse:.3f} MAE {mae:.3f} PCC {pcc:.3f} R2 {r2:.3f} loss {losses:.3f}'
-            .format(rmse=test_stats["rmse"], mae=test_stats["mae"], pcc=test_stats["pcc"], r2=test_stats["r2"], losses=test_stats["loss"]))
+        print('* RMSE {rmse:.3f} MAE {mae:.3f} PCC {pcc:.3f} R2 {r2:.3f} loss {losses:.3f} MAE_year {mae_year:.3f}'
+            .format(rmse=test_stats["rmse"], mae=test_stats["mae"], pcc=test_stats["pcc"], r2=test_stats["r2"], losses=test_stats["loss"],
+                    mae_year=test_stats["mae_years"]))
 
     # tensorboard
     if log_writer is not None:
@@ -305,6 +342,9 @@ def evaluate(data_loader, model, device, epoch, log_writer=None, args=None):
             log_writer.add_scalar('perf/test_mae', test_stats['mae'], epoch)
             log_writer.add_scalar('perf/test_pcc', test_stats['pcc'], epoch)
             log_writer.add_scalar('perf/test_r2', test_stats['r2'], epoch)
+            #Additional Metric: MAE in years
+            log_writer.add_scalar('perf/test_mae_years', test_stats["mae_years"], epoch)
+            log_writer.add_scalar('perf/test_std_mae_years', test_stats["std_mae_years"], epoch)
         log_writer.add_scalar('perf/test_loss', test_stats['loss'], epoch)
 
     # wandb
@@ -320,12 +360,18 @@ def evaluate(data_loader, model, device, epoch, log_writer=None, args=None):
             test_history['test_mae'] = test_stats['mae']
             test_history['test_pcc'] = test_stats['pcc']
             test_history['test_r2'] = test_stats['r2']
+            #Additional Metric: MAE in years
+            test_history['test_mae_years'] = test_stats["mae_years"]
+            test_history['test_std_mae_years'] = test_stats["std_mae_years"]
+    
 
             for i in range(target.shape[-1]):
                 test_history[f'Test/RMSE/{i}'] = rmse[i]
                 test_history[f'Test/MAE/{i}'] = mae[i]
                 test_history[f'Test/PCC/{i}'] = pcc[i]
                 test_history[f'Test/R2/{i}'] = r2[i]
+                test_history[f'Test/MAE_years/{i}'] = mae_rescaled[i]
+                test_history[f'Test/std_MAE_years/{i}'] = std_ae_rescaled[i]
 
         if args.plot_embeddings and epoch % 10 == 0:
             reducer = umap.UMAP(n_components=2, metric='euclidean')

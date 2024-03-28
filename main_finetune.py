@@ -124,6 +124,12 @@ def get_args_parser():
     parser.add_argument('--smoothing', type=float, default=0.1,
                         help='Label smoothing (default: 0.1)')
     
+    # Label statistics
+    parser.add_argument('--train_labels_mean', type=float, default=0.0,
+                        help='Mean value of training labels set')
+    parser.add_argument('--train_labels_std', type=float, default=1.0,
+                        help='std of training labels set')
+    
     # * Random Erase params
     parser.add_argument('--reprob', type=float, default=0.25, metavar='PCT',
                         help='Random erase prob (default: 0.25)')
@@ -174,6 +180,12 @@ def get_args_parser():
     parser.add_argument('--val_labels_mask_path', default='', type=str,
                         help='validation labels path (default: None)')
 
+    ##Overfit Case params
+    parser.add_argument('--overfit', type=bool, default=False,
+                        help='Overfitting case')
+    parser.add_argument('--overfit_sample_size', default=10, type=int,
+                        help='number of samples to overfit')
+
     parser.add_argument('--lower_bnd', type=int, default=0, metavar='N',
                         help='lower_bnd')
     parser.add_argument('--upper_bnd', type=int, default=0, metavar='N',
@@ -188,11 +200,13 @@ def get_args_parser():
                         help='path where to save, empty for no saving')
     parser.add_argument('--log_dir', default='',
                         help='path where to tensorboard log (default: ./logs)')
-    parser.add_argument('--wandb', action='store_true', default=False)
+    parser.add_argument('--wandb', action='store_true', default=True)
     parser.add_argument('--wandb_project', default='',
                         help='project where to wandb log')
     parser.add_argument('--wandb_id', default='', type=str,
                         help='id of the current run')
+    parser.add_argument('--wandb_name', default='', type=str,
+                        help= 'name of the current run')
     parser.add_argument('--device', default='cuda',
                         help='device to use for training / testing')
     parser.add_argument('--seed', default=0, type=int)
@@ -292,9 +306,9 @@ def main(args):
     if args.wandb == True:
         config = vars(args)
         if args.wandb_id:
-            wandb.init(project=args.wandb_project, id=args.wandb_id, config=config, entity="oturgut")
+            wandb.init(project=args.wandb_project, id=args.wandb_id, config=config, entity="begum-soenmez")
         else:
-            wandb.init(project=args.wandb_project, config=config, entity="oturgut")
+            wandb.init(project=args.wandb_project, name=args.wandb_name, config=config, entity="begum-soenmez")
 
     data_loader_train = torch.utils.data.DataLoader(
         dataset_train, 
@@ -431,8 +445,8 @@ def main(args):
                 print(f"Accuracy / F1 / AUROC / AUPRC of the network on the {len(dataset_val)} test images: {test_stats['acc']:.2f}% /"
                       f"{test_stats['f1']:.2f}% / {test_stats['auroc']:.2f}% / {test_stats['auprc']:.2f}%")
             elif args.downstream_task == 'regression':
-                print(f"Root Mean Squared Error (RMSE) / Mean Absolute Error (MAE) / Pearson Correlation Coefficient (PCC) / R Squared (R2)",
-                      f"of the network on the {len(dataset_val)} test images: {test_stats['rmse']:.4f} / {test_stats['mae']:.4f} /",
+                print(f"Root Mean Squared Error (RMSE) / Mean Absolute Error (MAE) / MAE in Years / Pearson Correlation Coefficient (PCC) / R Squared (R2)",
+                      f"of the network on the {len(dataset_val)} test images: {test_stats['rmse']:.4f} / {test_stats['mae']:.4f} / {test_stats['mae_years']:.4f} /",
                       f"{test_stats['pcc']:.4f} / {test_stats['r2']:.4f}")
         
             if args.wandb:
@@ -450,7 +464,7 @@ def main(args):
     elif args.downstream_task == 'regression':
         eval_criterion = "pcc"
     
-    best_stats = {'loss':np.inf, 'acc':0.0, 'f1':0.0, 'auroc':0.0, 'auprc':0.0, 'rmse':np.inf, 'mae':np.inf, 'pcc':0.0, 'r2':-1.0}
+    best_stats = {'loss':np.inf, 'acc':0.0, 'f1':0.0, 'auroc':0.0, 'auprc':0.0, 'rmse':np.inf, 'mae':np.inf, 'mae_years':np.inf, 'pcc':0.0, 'r2':-1.0}
     best_eval_scores = {'count':0, 'nb_ckpts_max':5, 'eval_criterion':[best_stats[eval_criterion]]}
     for epoch in range(args.start_epoch, args.epochs):
         start_time = time.time()
@@ -514,14 +528,15 @@ def main(args):
             # update best stats
             best_stats['rmse'] = min(best_stats['rmse'], test_stats['rmse'])
             best_stats['mae'] = min(best_stats['mae'], test_stats['mae'])
+            best_stats['mae_years'] = min(best_stats['mae_years'], test_stats['mae_years'])
             best_stats['pcc'] = max(best_stats['pcc'], test_stats['pcc'])
             best_stats['r2'] = max(best_stats['r2'], test_stats['r2'])
 
-            print(f"Root Mean Squared Error (RMSE) / Mean Absolute Error (MAE) / Pearson Correlation Coefficient (PCC) / R Squared (R2)",
-                  f"of the network on the {len(dataset_val)} test images: {test_stats['rmse']:.4f} / {test_stats['mae']:.4f} /",
+            print(f"Root Mean Squared Error (RMSE) / Mean Absolute Error (MAE) / MAE in Years / Pearson Correlation Coefficient (PCC) / R Squared (R2)",
+                  f"of the network on the {len(dataset_val)} test images: {test_stats['rmse']:.4f} / {test_stats['mae']:.4f} / {test_stats['mae_years']:.4f} /",
                   f"{test_stats['pcc']:.4f} / {test_stats['r2']:.4f}")
-            print(f'Min Root Mean Squared Error (RMSE) / Min Mean Absolute Error (MAE) / Max Pearson Correlation Coefficient (PCC) /',
-                  f'Max R Squared (R2): {best_stats["rmse"]:.4f} / {best_stats["mae"]:.4f} / {best_stats["pcc"]:.4f} / {best_stats["r2"]:.4f}\n')
+            print(f'Min Root Mean Squared Error (RMSE) / Min Mean Absolute Error (MAE) / Min MAE in Years / Max Pearson Correlation Coefficient (PCC) /',
+                  f'Max R Squared (R2): {best_stats["rmse"]:.4f} / {best_stats["mae"]:.4f} / {best_stats["mae_years"]:.4f} / {best_stats["pcc"]:.4f} / {best_stats["r2"]:.4f}\n')
         
         log_stats = {**{f'train_{k}': str(v) for k, v in train_stats.items()},
                         **{f'test_{k}': str(v) for k, v in test_stats.items()},
@@ -547,4 +562,10 @@ if __name__ == '__main__':
     args = args.parse_args()
     if args.output_dir:
         Path(args.output_dir).mkdir(parents=True, exist_ok=True)
+    #else:
+        #if args.overfit == False:
+            #directory_name = f"/vol/aimspace/users/soeb/EXP1_output_finetune_lemon/AR_Finetune_BATCH{args.batch_size}_BLR{args.blr}"
+            #Path(directory_name).mkdir(parents=True, exist_ok=True)
+            
+            #args.output_dir = directory_name
     main(args)
