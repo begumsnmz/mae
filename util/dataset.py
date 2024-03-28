@@ -123,19 +123,3 @@ class SignalDataset(Dataset):
 
         return data, label, label_mask
     
-    def normalize_labels(self, mean: torch.Tensor, std: torch.Tensor) -> None:
-            """
-            Normalize the labels using provided mean and standard deviation.
-
-            Parameters:
-            mean (torch.Tensor): The mean to use for normalization.
-            std (torch.Tensor): The standard deviation to use for normalization.
-            """
-            if not hasattr(self, 'labels'):
-                raise ValueError("Labels are not loaded or initialized.")
-
-            # Ensure mean and std are tensors and have the correct shape
-            if not isinstance(mean, torch.Tensor) or not isinstance(std, torch.Tensor):
-                raise TypeError("mean and std must be torch.Tensor objects.")
-            
-            self.labels = (self.labels - mean) / (std + 1e-8)
