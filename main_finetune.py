@@ -37,6 +37,7 @@ from util.callbacks import EarlyStop
 import models_vit
 
 from engine_finetune import train_one_epoch, evaluate
+import json
 
 
 def get_args_parser():
@@ -555,7 +556,9 @@ def main(args):
 
     if args.wandb:
         wandb.log({f'Best Statistics/{k}': v for k, v in best_stats.items()})
-
+    
+    metrics = {'r2': best_stats['r2'], 'mae': best_stats['mae_years']}
+    print(json.dumps(metrics))
 
 if __name__ == '__main__':
     args = get_args_parser()

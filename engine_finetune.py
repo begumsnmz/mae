@@ -18,7 +18,7 @@ from typing import Iterable, Optional
 import torch
 
 from sklearn.metrics import roc_auc_score, f1_score, accuracy_score, average_precision_score
-from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+from sklearn.metrics import root_mean_squared_error, mean_absolute_error, r2_score
 from sklearn.feature_selection import r_regression
 
 import wandb
@@ -52,9 +52,9 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
 
     if log_writer is not None:
         print('log_dir: {}'.format(log_writer.log_dir))
-    
+
     training_history = {}
-    
+
     # required for metrics calculation
     logits, labels = [], []
 
@@ -63,6 +63,9 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
         if data_iter_step % accum_iter == 0:
             lr_sched.adjust_learning_rate(optimizer, data_iter_step / len(data_loader) + epoch, args)
 
+
+        if isinstance(samples, list):
+            samples = torch.stack(samples)
         samples = samples.to(device, non_blocking=True)
         targets = targets.to(device, non_blocking=True)
         targets_mask = targets_mask.to(device, non_blocking=True)
@@ -119,7 +122,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
     # Rescale logits and labels to their original scale using the mean and std of the training labels
     rescaled_logits = logits * args.train_labels_std + args.train_labels_mean
     rescaled_labels = labels * args.train_labels_std + args.train_labels_mean
-    
+
     training_stats = {k: meter.global_avg for k, meter in metric_logger.meters.items()}
     if args.downstream_task == 'classification':
         labels_onehot = torch.nn.functional.one_hot(labels, num_classes=-1)                 # (B, num_classes)
@@ -133,7 +136,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
         training_stats["auroc"] = auc
         training_stats["auprc"] = auprc
     elif args.downstream_task == 'regression':
-        rmse = mean_squared_error(logits, labels, multioutput="raw_values", squared=False)
+        rmse = root_mean_squared_error(logits, labels, multioutput="raw_values")
         training_stats["rmse"] = rmse.mean(axis=-1)
 
         mae = mean_absolute_error(logits, labels, multioutput="raw_values")
@@ -195,6 +198,8 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
             #Additional Metric: MAE in years
             training_history['mae_years'] = training_stats["mae_years"]
             training_history['std_mae_years'] = training_stats["std_mae_years"]
+            training_history['baseline_mae_years'] = args.baseline_metrics_train['Random guess MAE']
+            training_history['baseline_std_mae_years'] = args.baseline_metrics_train['Random guess std']
 
             for i in range(targets.shape[-1]):
                 training_history[f'Train/RMSE/{i}'] = rmse[i]
@@ -222,9 +227,9 @@ def evaluate(data_loader, model, device, epoch, log_writer=None, args=None):
 
     if log_writer is not None:
         print('log_dir: {}'.format(log_writer.log_dir))
-    
+
     test_history = {}
-    
+
     # required for metrics calculation
     embeddings, logits, labels = [], [], []
 
@@ -232,6 +237,8 @@ def evaluate(data_loader, model, device, epoch, log_writer=None, args=None):
         images = batch[0]
         target = batch[-2]
         target_mask = batch[-1]
+        if isinstance(images, list):
+            images = torch.stack(images)
         images = images.to(device, non_blocking=True)
         target = target.to(device, non_blocking=True)
         target_mask = target_mask.to(device, non_blocking=True)
@@ -264,7 +271,7 @@ def evaluate(data_loader, model, device, epoch, log_writer=None, args=None):
         embeddings_path = os.path.join(args.output_dir, "embeddings")
         if not os.path.exists(embeddings_path):
             os.makedirs(embeddings_path)
-        
+
         file_name = f"embeddings_test.pt" if args.eval else f"embeddings_{epoch}.pt"
         torch.save(embeddings, os.path.join(embeddings_path, file_name))
 
@@ -279,12 +286,12 @@ def evaluate(data_loader, model, device, epoch, log_writer=None, args=None):
     # Rescale logits and labels to their original scale using the mean and std of the training labels
     rescaled_logits = logits * args.train_labels_std + args.train_labels_mean
     rescaled_labels = labels * args.train_labels_std + args.train_labels_mean
-    
+
     if args.save_logits:
         logits_path = os.path.join(args.output_dir, "logits")
         if not os.path.exists(logits_path):
             os.makedirs(logits_path)
-        
+
         file_name = f"logits_test.pt" if args.eval else f"logits_{epoch}.pt"
         torch.save(logits, os.path.join(logits_path, file_name))
 
@@ -295,13 +302,13 @@ def evaluate(data_loader, model, device, epoch, log_writer=None, args=None):
         acc = 100*accuracy_score(y_true=labels, y_pred=logits.argmax(dim=-1))
         auc = 100*roc_auc_score(y_true=labels_onehot, y_score=probs)
         auprc = 100*average_precision_score(y_true=labels_onehot, y_score=probs, pos_label=1)
-        
+
         test_stats["f1"] = f1
         test_stats["acc"] = acc
         test_stats["auroc"] = auc
         test_stats["auprc"] = auprc
     elif args.downstream_task == 'regression':
-        rmse = mean_squared_error(logits, labels, multioutput="raw_values", squared=False)
+        rmse = root_mean_squared_error(logits, labels, multioutput="raw_values")
         test_stats["rmse"] = rmse.mean(axis=-1)
 
         mae = mean_absolute_error(logits, labels, multioutput="raw_values")
@@ -363,7 +370,10 @@ def evaluate(data_loader, model, device, epoch, log_writer=None, args=None):
             #Additional Metric: MAE in years
             test_history['test_mae_years'] = test_stats["mae_years"]
             test_history['test_std_mae_years'] = test_stats["std_mae_years"]
-    
+            # Baseline [Random Guess] metrics for validation
+            test_history['test_baseline_mae_years'] = args.baseline_metrics_val['Random guess MAE']
+            test_history['test_baseline_std_mae_years'] = args.baseline_metrics_val['Random guess std']
+
 
             for i in range(target.shape[-1]):
                 test_history[f'Test/RMSE/{i}'] = rmse[i]
@@ -376,7 +386,7 @@ def evaluate(data_loader, model, device, epoch, log_writer=None, args=None):
         if args.plot_embeddings and epoch % 10 == 0:
             reducer = umap.UMAP(n_components=2, metric='euclidean')
             umap_proj = reducer.fit_transform(embeddings)
-            
+
             fig, ax = plt.subplots(figsize=(8, 8))
 
             cmap = matplotlib.cm.get_cmap('tab20') # for the colours
@@ -388,5 +398,5 @@ def evaluate(data_loader, model, device, epoch, log_writer=None, args=None):
 
             test_history["UMAP Embeddings"] = wandb.Image(fig)
             plt.close('all')
-    
+
     return test_stats, test_history

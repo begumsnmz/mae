@@ -36,6 +36,7 @@ from sklearn.metrics import mean_absolute_error
 from engine_pretrain import train_one_epoch, evaluate_online, evaluate
 
 from util.dataset import SignalDataset
+import json
 
 
 def get_args_parser():
@@ -51,6 +52,18 @@ def get_args_parser():
     parser.add_argument('--model', default='mae_vit_base_patch200', type=str, metavar='MODEL',
                         help='Name of model to train')
 
+    # Dataset parameters
+    parser.add_argument('--data_path', default='_.pt', type=str,
+                    help='dataset path')
+    parser.add_argument('--val_data_path', default='', type=str,
+                    help='validation dataset path')
+    parser.add_argument('--label_map_path', default='', type=str,
+                    help='label mappings path')
+    parser.add_argument('--val_label_map_path', default='', type=str,
+                    help='val label mappings path')
+    parser.add_argument('--scale_percentage', default=100, type=int,
+                        help='percentage of dataset to sample - for dataset scaling')
+
     parser.add_argument('--input_channels', type=int, default=5, metavar='N',
                         help='input channels')
     parser.add_argument('--input_electrodes', type=int, default=65, metavar='N',
@@ -59,20 +72,24 @@ def get_args_parser():
                         help='input length')
     parser.add_argument('--input_size', default=(5, 65, 37000), type=Tuple,
                         help='images input size')
-                        
+
     parser.add_argument('--patch_height', type=int, default=65, metavar='N',
                         help='patch height')
     parser.add_argument('--patch_width', type=int, default=200, metavar='N',
                         help='patch width')
     parser.add_argument('--patch_size', default=(65, 200), type=Tuple,
                         help='patch size')
-    
+
+    #K-Fold case
+    parser.add_argument('--fold', type=int, default=-1,
+                        help='Current fold')
+
     # Label statistics
     parser.add_argument('--train_labels_mean', type=float, default=0.0,
                         help='Mean value of training labels set')
     parser.add_argument('--train_labels_std', type=float, default=1.0,
                         help='stdeof training labels set')
-    
+
     ##Overfit Case params
     parser.add_argument('--overfit', type=bool, default=False,
                         help='Overfitting case')
@@ -120,19 +137,13 @@ def get_args_parser():
     parser.add_argument('--max_delta', default=0, type=float,
                         help='Early stopping threshold (val has to be worse than (train+delta)) (default: 0)')
 
-    # Dataset parameters
-    parser.add_argument('--data_path', default='_.pt', type=str,
-                        help='dataset path')
-    parser.add_argument('--val_data_path', default='', type=str,
-                        help='validation dataset path')
-    
-    parser.add_argument('--online_evaluation', action='store_true', default=True,
+    parser.add_argument('--online_evaluation', action='store_true', default=False,
                         help='Perform online evaluation of a downstream task')
     parser.add_argument('--online_evaluation_task', default='classification', type=str,
                         help='Online downstream task (default: classification)')
     parser.add_argument('--online_num_classes', default=2, type=int,
                         help='Online classification task classes (default: 2)')
-    
+
     parser.add_argument('--lower_bnd', type=int, default=0, metavar='N',
                         help='lower_bnd')
     parser.add_argument('--upper_bnd', type=int, default=0, metavar='N',
@@ -144,7 +155,7 @@ def get_args_parser():
                         help='labels path for the online evaluation')
     parser.add_argument('--labels_mask_path_online', default='', type=str,
                         help='labels path (default: None)')
-    
+
     parser.add_argument('--val_data_path_online', default='', type=str,
                         help='validation dataset path for the online evaluation')
     parser.add_argument('--val_labels_path_online', default='', type=str,
@@ -186,6 +197,14 @@ def get_args_parser():
 
     return parser
 
+def custom_collate(batch):
+    # A batch is a list of tuples where each tuple is the output of __getitem__ from your dataset
+    data = [item[0] for item in batch]
+    labels = [item[1] for item in batch]
+    masks = [item[2] for item in batch]
+
+    return [data, torch.stack(labels), torch.stack(masks)]
+
 
 def main(args):
     args.input_size = (args.input_channels, args.input_electrodes, args.time_steps)
@@ -198,6 +217,7 @@ def main(args):
     print("{}".format(args).replace(', ', ',\n'))
 
     device = torch.device(args.device)
+    print(device)
 
     # fix the seed for reproducibility
     seed = args.seed + misc.get_rank()
@@ -241,32 +261,40 @@ def main(args):
             wandb.init(project=args.wandb_project, config=config, entity="begum-soenmez")
 
     data_loader_train = torch.utils.data.DataLoader(
-        dataset_train, 
+        dataset_train,
         sampler=sampler_train,
         # shuffle=True,
         batch_size=args.batch_size,
         num_workers=args.num_workers,
         pin_memory=args.pin_mem,
         drop_last=False,
+        collate_fn = custom_collate
     )
 
     data_loader_val = torch.utils.data.DataLoader(
-        dataset_val, 
+        dataset_val,
         sampler=sampler_val,
         # shuffle=False,
         batch_size=args.batch_size,
         num_workers=args.num_workers,
         pin_memory=args.pin_mem,
         drop_last=False,
+        collate_fn = custom_collate
     )
 
     # online evaluation
     if args.online_evaluation:
-        dataset_online_train = SignalDataset(data_path=args.data_path_online, labels_path=args.labels_path_online, 
-                                             labels_mask_path=args.labels_mask_path_online, 
+        dataset_online_train = SignalDataset(data_path=args.data_path_online, labels_path=args.labels_path_online,
+                                             labels_mask_path=args.labels_mask_path_online,
+                                             label_map_path=args.label_map_path,
                                              downstream_task=args.online_evaluation_task, train=True, args=args)
         #Random guessing stats
-        labels_denorm = dataset_online_train.labels * args.train_labels_std + args.train_labels_mean
+        if torch.all(dataset_online_train.labels != 0):
+            labels_denorm = dataset_online_train.labels * args.train_labels_std + args.train_labels_mean
+        else:
+            labels_norm = torch.tensor(list(dataset_online_train.label_map.values()))
+            labels_denorm = labels_norm * args.train_labels_std + args.train_labels_mean
+
         random_guess = torch.ones_like(labels_denorm)*args.train_labels_mean
         MAE_random_guess = mean_absolute_error(random_guess, labels_denorm, multioutput="raw_values")
 
@@ -276,12 +304,13 @@ def main(args):
         print("Random guess MAE: " ,MAE_random_guess)
         print("Random guess std: " ,std_random_guess)
 
-        dataset_online_val = SignalDataset(data_path=args.val_data_path_online, labels_path=args.val_labels_path_online, 
-                                           labels_mask_path=args.val_labels_mask_path_online, 
+        dataset_online_val = SignalDataset(data_path=args.val_data_path_online, labels_path=args.val_labels_path_online,
+                                           labels_mask_path=args.val_labels_mask_path_online,
+                                           label_map_path=args.val_label_map_path,
                                            downstream_task=args.online_evaluation_task, train=False, args=args)
 
         data_loader_online_train = torch.utils.data.DataLoader(
-            dataset_online_train, 
+            dataset_online_train,
             shuffle=True,
             batch_size=256,
             num_workers=args.num_workers,
@@ -290,7 +319,7 @@ def main(args):
         )
 
         data_loader_online_val = torch.utils.data.DataLoader(
-            dataset_online_val, 
+            dataset_online_val,
             shuffle=False,
             batch_size=256,
             num_workers=args.num_workers,
@@ -318,7 +347,7 @@ def main(args):
     print('Number of decoder params (M): %.2f' % (n_params_decoder / 1.e6))
 
     eff_batch_size = args.batch_size * args.accum_iter * misc.get_world_size()
-    
+
     if args.lr is None:  # only base_lr is specified
         args.lr = args.blr * eff_batch_size / 4
 
@@ -331,7 +360,7 @@ def main(args):
     if args.distributed:
         model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu], find_unused_parameters=True)
         model_without_ddp = model.module
-    
+
     # following timm: set wd as 0 for bias and norm layers
     param_groups = optim_factory.add_weight_decay(model_without_ddp, args.weight_decay)
     optimizer = torch.optim.AdamW(param_groups, lr=args.lr, betas=(0.9, 0.95))
@@ -346,7 +375,7 @@ def main(args):
     print(f"Start training for {args.epochs} epochs")
 
     eval_criterion = "ncc"
-    
+
     best_stats = {'loss':np.inf, 'ncc':0.0}
     best_eval_scores = {'count':0, 'nb_ckpts_max':5, 'eval_criterion':[best_stats[eval_criterion]]}
     for epoch in range(args.start_epoch, args.epochs):
@@ -373,13 +402,13 @@ def main(args):
                 online_estimator = LogisticRegression(class_weight='balanced', max_iter=2000)
             elif args.online_evaluation_task == "regression":
                 online_estimator = LinearRegression()
-            online_history = evaluate_online(estimator=online_estimator, model=model, device=device, 
-                                             train_dataloader=data_loader_online_train, 
+            online_history = evaluate_online(estimator=online_estimator, model=model, device=device,
+                                             train_dataloader=data_loader_online_train,
                                              val_dataloader=data_loader_online_val, args=args)
 
         best_stats['loss'] = min(best_stats['loss'], val_stats['loss'])
         best_stats['ncc'] = max(best_stats['ncc'], val_stats['ncc'])
-        
+
         if eval_criterion == "loss":
             if early_stop.evaluate_decreasing_metric(val_metric=val_stats[eval_criterion]):
                 break
@@ -394,7 +423,7 @@ def main(args):
 
                 misc.save_best_model(
                     args=args, model=model, model_without_ddp=model_without_ddp, optimizer=optimizer,
-                    loss_scaler=loss_scaler, epoch=epoch, test_stats=val_stats, evaluation_criterion=eval_criterion, 
+                    loss_scaler=loss_scaler, epoch=epoch, test_stats=val_stats, evaluation_criterion=eval_criterion,
                     mode="decreasing")
         else:
             if early_stop.evaluate_increasing_metric(val_metric=val_stats[eval_criterion]):
@@ -410,9 +439,9 @@ def main(args):
 
                 misc.save_best_model(
                     args=args, model=model, model_without_ddp=model_without_ddp, optimizer=optimizer,
-                    loss_scaler=loss_scaler, epoch=epoch, test_stats=val_stats, evaluation_criterion=eval_criterion, 
+                    loss_scaler=loss_scaler, epoch=epoch, test_stats=val_stats, evaluation_criterion=eval_criterion,
                     mode="increasing")
-            
+
         log_stats = {**{f'train_{k}': v for k, v in train_stats.items()}, 'epoch': epoch,}
 
         if args.output_dir and misc.is_main_process():
@@ -425,6 +454,9 @@ def main(args):
         if args.wandb:
             wandb.log(train_history | test_history | online_history | {"Time per epoch [sec]": total_time})
 
+    metrics = {'val_ncc': best_stats['ncc']}
+    print(json.dumps(metrics))
+
 
 if __name__ == '__main__':
     args = get_args_parser()
@@ -432,8 +464,12 @@ if __name__ == '__main__':
     if args.output_dir:
         Path(args.output_dir).mkdir(parents=True, exist_ok=True)
     else:
-        directory_name = f"/vol/aimspace/users/soeb/EXP1_output_pretrain_lemon/MIN_Pretrain_BATCH{args.batch_size}_BLR{args.blr}"
-        Path(directory_name).mkdir(parents=True, exist_ok=True)
+        if args.fold != -1:
+            directory_name = f"/vol/aimspace/users/soeb/EXP1_output_pretrain_lemon/Fold{args.fold}_AR_Pretrain_BATCH{args.batch_size}_BLR{args.blr}"
+            Path(directory_name).mkdir(parents=True, exist_ok=True)
+        else:
+            directory_name = f"/vol/aimspace/users/soeb/EXP2_output_pretrain_tuh/PCT{args.scale_percentage}_Pretrain_BATCH{args.batch_size}_BLR{args.blr}"
+            Path(directory_name).mkdir(parents=True, exist_ok=True)
 
         args.output_dir = directory_name
     main(args)

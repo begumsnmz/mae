@@ -24,7 +24,7 @@ import util.lr_sched as lr_sched
 import matplotlib.pyplot as plt
 
 from sklearn.metrics import roc_auc_score, f1_score, accuracy_score, average_precision_score
-from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+from sklearn.metrics import root_mean_squared_error, mean_absolute_error, r2_score
 
 from sklearn.feature_selection import r_regression
 
@@ -46,8 +46,8 @@ def ncc(data_0:torch.Tensor(), data_1:torch.Tensor()) -> torch.Tensor():
     """
     Zero-Normalized cross-correlation coefficient between two data sets
 
-    Zero-Normalized cross-correlation equals the cosine of the angle between the unit vectors F and T, 
-    being thus 1 if and only if F equals T multiplied by a positive scalar. 
+    Zero-Normalized cross-correlation equals the cosine of the angle between the unit vectors F and T,
+    being thus 1 if and only if F equals T multiplied by a positive scalar.
 
     Parameters
     ----------
@@ -88,6 +88,8 @@ def train_one_epoch(model: torch.nn.Module,
         if data_iter_step % accum_iter == 0:
             lr_sched.adjust_learning_rate(optimizer, data_iter_step / len(data_loader) + epoch, args)
 
+        if isinstance(samples, list):
+            samples = torch.stack(samples)
         samples = samples.to(device, non_blocking=True)
 
         with torch.cuda.amp.autocast():
@@ -192,11 +194,13 @@ def evaluate_online(estimator, model, device, train_dataloader, val_dataloader, 
 
     train_labels_mean = args.train_labels_mean
     train_labels_std = args.train_labels_std
-    
+
     # training
     train_embeddings = []
     train_labels = []
     for data, label, label_mask in train_dataloader:
+        if isinstance(data, list):
+            data = torch.stack(data)
         data = data.to(device, non_blocking=True)
         label = label * label_mask
         train_labels.append(label.to(device, non_blocking=True))
@@ -210,7 +214,7 @@ def evaluate_online(estimator, model, device, train_dataloader, val_dataloader, 
     train_labels = train_labels.cpu()
 
     estimator.fit(train_embeddings, train_labels) # only fit with training data
-    
+
     if args.online_evaluation_task == "classification":
         train_probs = torch.tensor(estimator.predict_proba(train_embeddings), dtype=torch.float16)
         classifier_f1_train = f1_score(y_true=train_labels, y_pred=train_probs.argmax(dim=-1), pos_label=1)
@@ -222,25 +226,27 @@ def evaluate_online(estimator, model, device, train_dataloader, val_dataloader, 
 
         #Additional metric: MAE in years
         #Rescale preds and labels
-        train_preds_rescaled = train_preds * train_labels_std + train_labels_mean  
-        train_labels_rescaled = train_labels * train_labels_std + train_labels_mean  
+        train_preds_rescaled = train_preds * train_labels_std + train_labels_mean
+        train_labels_rescaled = train_labels * train_labels_std + train_labels_mean
 
-        classifier_rmse_train = mean_squared_error(train_preds, train_labels, multioutput="raw_values", squared=False)
+        classifier_rmse_train = root_mean_squared_error(train_preds, train_labels, multioutput="raw_values")
         classifier_mae_train = mean_absolute_error(train_preds, train_labels, multioutput="raw_values")
         classifier_pcc_train = np.concatenate([r_regression(train_preds[:, i].view(-1, 1), train_labels[:, i]) for i in range(train_labels.shape[-1])], axis=0)
         classifier_r2_train = np.stack([r2_score(train_labels[:, i], train_preds[:, i]) for i in range(train_labels.shape[-1])], axis=0)
 
-        
+
         classifier_mae_train_years = mean_absolute_error(train_preds_rescaled, train_labels_rescaled, multioutput="raw_values")
-   
+
         abs_errors_train = torch.abs(train_preds_rescaled - train_labels_rescaled)
         classifier_mae_train_std_years = torch.std(abs_errors_train, dim=0, unbiased=True).mean().item()
 
-        
+
     # validation
     val_embeddings = []
     val_labels = []
     for data, label, label_mask in val_dataloader:
+        if isinstance(data, list):
+            data = torch.stack(data)
         data = data.to(device, non_blocking=True)
         label = label * label_mask
         val_labels.append(label.to(device, non_blocking=True))
@@ -252,7 +258,7 @@ def evaluate_online(estimator, model, device, train_dataloader, val_dataloader, 
     val_embeddings = val_embeddings.cpu()
     val_labels = torch.cat(val_labels, dim=0)
     val_labels = val_labels.cpu()
-    
+
     if args.online_evaluation_task == "classification":
         val_probs = torch.tensor(estimator.predict_proba(val_embeddings), dtype=torch.float16)
         classifier_f1_val = f1_score(y_true=val_labels, y_pred=val_probs.argmax(dim=-1), pos_label=1)
@@ -261,18 +267,18 @@ def evaluate_online(estimator, model, device, train_dataloader, val_dataloader, 
         classifier_auprc_val = average_precision_score(y_true=torch.nn.functional.one_hot(val_labels, num_classes=-1), y_score=val_probs, pos_label=1)
     elif args.online_evaluation_task == "regression":
         val_preds = torch.tensor(estimator.predict(val_embeddings), dtype=torch.float16)
-        classifier_rmse_val = mean_squared_error(val_preds, val_labels, multioutput="raw_values", squared=False)
+        classifier_rmse_val = root_mean_squared_error(val_preds, val_labels, multioutput="raw_values")
         classifier_mae_val = mean_absolute_error(val_preds, val_labels, multioutput="raw_values")
         classifier_pcc_val = np.concatenate([r_regression(val_preds[:, i].view(-1, 1), val_labels[:, i]) for i in range(val_labels.shape[-1])], axis=0)
         classifier_r2_val = np.stack([r2_score(val_labels[:, i], val_preds[:, i]) for i in range(val_labels.shape[-1])], axis=0)
 
         #Additional Metric: MAE in years
         #Rescale predictions and labels
-        val_preds_rescaled = val_preds * train_labels_std + train_labels_mean  
-        val_labels_rescaled = val_labels * train_labels_std + train_labels_mean  
+        val_preds_rescaled = val_preds * train_labels_std + train_labels_mean
+        val_labels_rescaled = val_labels * train_labels_std + train_labels_mean
 
         classifier_mae_val_years = mean_absolute_error(val_preds_rescaled, val_labels_rescaled, multioutput="raw_values")
-        
+
         abs_errors_val = torch.abs(val_preds_rescaled - val_labels_rescaled)
         classifier_mae_val_std_years = torch.std(abs_errors_val, dim=0, unbiased=True).mean().item()
 
@@ -302,11 +308,16 @@ def evaluate_online(estimator, model, device, train_dataloader, val_dataloader, 
         #Additional Metric: MAE in Years
         #train
         online_history['online/train_mae_years'] = classifier_mae_train_years.mean(axis=-1)
-        online_history['online/train_mae_std_years'] = classifier_mae_train_std_years 
+        online_history['online/train_mae_std_years'] = classifier_mae_train_std_years
         #validation
         online_history['online/val_mae_years'] = classifier_mae_val_years.mean(axis=-1)
-        online_history['online/val_mae_std_years'] = classifier_mae_val_std_years  
-
+        online_history['online/val_mae_std_years'] = classifier_mae_val_std_years
+        # Baseline [Random Guess] metrics for training
+        online_history['online/baseline_train_mae'] = args.baseline_metrics_train['Random guess MAE']
+        online_history['online/baseline_train_std'] = args.baseline_metrics_train['Random guess std']
+        # Baseline [Random Guess] metrics for validation
+        online_history['online/baseline_val_mae'] = args.baseline_metrics_val['Random guess MAE']
+        online_history['online/baseline_val_std'] = args.baseline_metrics_val['Random guess std']
 
     return online_history
 
@@ -320,11 +331,13 @@ def evaluate(data_loader, model, device, epoch, log_writer=None, args=None):
 
     if log_writer is not None:
         print('log_dir: {}'.format(log_writer.log_dir))
-    
-    test_history = {}  
+
+    test_history = {}
 
     for batch in metric_logger.log_every(data_loader, 10, header):
         samples = batch[0]
+        if isinstance(samples, list):
+            samples = torch.stack(samples)
         samples = samples.to(device, non_blocking=True)
 
         # compute output
@@ -335,7 +348,7 @@ def evaluate(data_loader, model, device, epoch, log_writer=None, args=None):
         loss_cos_value = loss_cos.item()
         cos_embed_value = cos_embed.item()
         z_std_value = z_std.item()
-        
+
         metric_logger.update(loss=loss_value)
 
         batch_size = samples.shape[0]
