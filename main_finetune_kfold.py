@@ -163,6 +163,8 @@ def get_args_parser():
     # * Finetuning params
     parser.add_argument('--finetune', default='',
                         help='finetune from checkpoint')
+    parser.add_argument('--baseline', action='store_true', default=False,
+                        help='Finetune from scratch, no checkpoint')
     parser.add_argument('--global_pool', action='store_true', default=False)
     parser.add_argument('--attention_pool', action='store_true', default=False)
     parser.add_argument('--cls_token', action='store_false', dest='global_pool',
@@ -306,6 +308,7 @@ def custom_collate_fn(batch, mean, std):
     Returns:
         list: A list containing normalized batch data with samples, normalized labels, and label masks.
     """
+    #print(f"Current fold mean and std: {float(mean):.2f}, {float(std):.2f}")
     samples = [item[0] for item in batch]
     labels = [item[1] for item in batch]
     label_masks = [item[2] for item in batch]
@@ -315,9 +318,9 @@ def custom_collate_fn(batch, mean, std):
     labels_normalized = (labels_tensor - mean) / (std + 1e-8)
     return [samples, labels_normalized, torch.stack(label_masks)]
 
-def prepare_datasets(dataset, k_folds, args):
+def prepare_datasets(dataset, k_folds):
     if k_folds > 1:
-        kf = KFold(n_splits=k_folds, shuffle=True, random_state=args.seed)
+        kf = KFold(n_splits=k_folds, shuffle=True, random_state=58)
         splits = list(kf.split(dataset))
     else:
         # If no cross-validation, just split the dataset into train and validation in some ratio (e.g., 80-20)
@@ -348,8 +351,10 @@ def main(args):
     cudnn.benchmark = True
 
     # Create empty .csv file for saving
-    csv_filename = f"benchmark-mae_BATCH{args.batch_size}_BLR{args.blr}_dataset-lemon_chkpt{args.finetune}.csv"
-    csv_directory = "/vol/aimspace/users/soeb/lemon_kfold_results"
+    #csv_filename = f"benchmark-AR_mae_sweep_dataset-lemon_TUH100pct_layerdecay{args.layer_decay}_droppath{args.drop_path}.csv"
+    csv_filename = f"benchmark-AR_mae_dataset-lemon_DEBUG.csv"
+    #csv_directory = "/vol/aimspace/users/soeb/lemon_kfold_results_EXP2"
+    csv_directory = "/vol/aimspace/users/soeb/EXP2_tuh_sweeps"
     csv_file_path = os.path.join(csv_directory, csv_filename)
     with open(csv_file_path, mode='w', newline='') as file:
         writer = csv.DictWriter(file, fieldnames=["fold", "MAE", "r2", "benchmark", "dataset"])
@@ -359,7 +364,7 @@ def main(args):
                                   labels_mask_path=args.labels_mask_path,
                                   label_map_path=args.label_map_path,
                                   downstream_task=args.downstream_task, train=True, args=args)
-    splits = prepare_datasets(dataset, args.k_folds, args)
+    splits = prepare_datasets(dataset, args.k_folds)
 
     # train balanced
     class_weights = 2.0 / (2.0 * torch.Tensor([1.0, 1.0])) # total_nb_samples / (nb_classes * samples_per_class)
@@ -398,12 +403,10 @@ def main(args):
 ###################################  K-FOLD CROSS VALIDATION  ###############################################
     # Combining the initial datasets if k_folds > 1
     for fold, (train_idx, val_idx) in enumerate(splits):
-        #Find checkpoint file to load
-        try:
-            args.finetune = find_checkpoint_for_fold("/vol/aimspace/users/soeb/EXP1_output_pretrain_lemon_kfold", fold)
-        except FileNotFoundError as e:
-            print(e)
-            continue
+        if not args.baseline:
+            if args.finetune == '': #If a specific finetune path is not provided, locate it with the function
+                args.finetune = find_checkpoint_for_fold("/vol/aimspace/users/soeb/EXP1_output_pretrain_lemon_kfold", fold)
+                print(f"Using generated checkpoint for fold {fold}: {args.finetune}")
 
         if args.wandb:
             config = vars(args)
@@ -455,7 +458,7 @@ def main(args):
              #shuffle=True,
             batch_size=args.batch_size,
             num_workers=args.num_workers,
-            pin_memory=True,
+            pin_memory=args.pin_mem,
             drop_last=False,
             collate_fn=collate_fn_with_stats
             )
@@ -466,7 +469,7 @@ def main(args):
             #shuffle=False,
             batch_size=args.batch_size,
             num_workers=args.num_workers,
-            pin_memory=True,
+            pin_memory=args.pin_mem,
             drop_last=False,
             collate_fn=collate_fn_with_stats
             )
@@ -668,7 +671,7 @@ def main(args):
                 best_stats['auroc'] = max(best_stats['auroc'], test_stats['auroc'])
                 best_stats['auprc'] = max(best_stats['auprc'], test_stats['auprc'])
 
-                print(f"Accuracy / F1 / AUROC / AUPRC of the network on the {len(dataset_val)} test images: {test_stats['acc']:.1f}% /",
+                print(f"Accuracy / F1 / AUROC / AUPRC of the network on the {len(dataset_val_fold)} test images: {test_stats['acc']:.1f}% /",
                     f"{test_stats['f1']:.1f}% / {test_stats['auroc']:.1f}% / {test_stats['auprc']:.1f}%")
                 print(f'Max Accuracy / F1 / AUROC / AUPRC: {best_stats["acc"]:.2f}% / {best_stats["f1"]:.2f}% /',
                     f'{best_stats["auroc"]:.2f}% / {best_stats["auprc"]:.2f}%\n')

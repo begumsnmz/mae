@@ -206,7 +206,7 @@ def evaluate_online(estimator, model, device, train_dataloader, val_dataloader, 
         train_labels.append(label.to(device, non_blocking=True))
 
         with torch.cuda.amp.autocast():
-            train_embeddings.append(model.forward_encoder_all_patches(data, args.mask_ratio))
+            train_embeddings.append(model.forward_encoder_all_patches(data))
 
     train_embeddings = torch.cat(train_embeddings, dim=0)[:, 1:, :].mean(dim=1) # globally average pooled token
     train_embeddings = train_embeddings.cpu()
@@ -252,7 +252,7 @@ def evaluate_online(estimator, model, device, train_dataloader, val_dataloader, 
         val_labels.append(label.to(device, non_blocking=True))
 
         with torch.cuda.amp.autocast():
-            val_embeddings.append(model.forward_encoder_all_patches(data, args.mask_ratio))
+            val_embeddings.append(model.forward_encoder_all_patches(data))
 
     val_embeddings = torch.cat(val_embeddings, dim=0)[:, 1:, :].mean(dim=1) # globally average pooled token
     val_embeddings = val_embeddings.cpu()

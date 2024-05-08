@@ -37,7 +37,8 @@ from util.callbacks import EarlyStop
 import models_vit
 
 from engine_finetune import train_one_epoch, evaluate
-import json
+from functools import partial
+from sklearn.metrics import mean_absolute_error
 
 
 def get_args_parser():
@@ -52,7 +53,7 @@ def get_args_parser():
     # Model parameters
     parser.add_argument('--model', default='vit_base_patch200', type=str, metavar='MODEL',
                         help='Name of model to train')
-    
+
     parser.add_argument('--input_channels', type=int, default=5, metavar='N',
                         help='input channels')
     parser.add_argument('--input_electrodes', type=int, default=65, metavar='N',
@@ -61,6 +62,10 @@ def get_args_parser():
                         help='input length')
     parser.add_argument('--input_size', default=(5, 65, 37000), type=Tuple,
                         help='images input size')
+    parser.add_argument('--electrode_idx', type=str, default=None,
+                        help='Comma-separated electrode indices to slice')
+    parser.add_argument('--scale_percentage', default=100, type=int,
+                        help='percentage of dataset to sample - for dataset scaling')
 
     parser.add_argument('--patch_height', type=int, default=65, metavar='N',
                         help='patch height')
@@ -71,7 +76,7 @@ def get_args_parser():
 
     parser.add_argument('--drop_path', type=float, default=0.1, metavar='PCT',
                         help='Drop path rate (default: 0.1)')
-                        
+
     # Augmentation parameters
     parser.add_argument('--masking_blockwise', action='store_true', default=False,
                         help='Masking blockwise in channel and time dimension (instead of random masking)')
@@ -124,13 +129,13 @@ def get_args_parser():
     # Criterion parameters
     parser.add_argument('--smoothing', type=float, default=0.1,
                         help='Label smoothing (default: 0.1)')
-    
+
     # Label statistics
     parser.add_argument('--train_labels_mean', type=float, default=0.0,
                         help='Mean value of training labels set')
     parser.add_argument('--train_labels_std', type=float, default=1.0,
                         help='std of training labels set')
-    
+
     # * Random Erase params
     parser.add_argument('--reprob', type=float, default=0.25, metavar='PCT',
                         help='Random erase prob (default: 0.25)')
@@ -173,6 +178,8 @@ def get_args_parser():
                         help='labels path (default: None)')
     parser.add_argument('--labels_mask_path', default='', type=str,
                         help='labels path (default: None)')
+    parser.add_argument('--label_map_path', default='', type=str,
+                    help='label mappings path')
 
     parser.add_argument('--val_data_path', default='', type=str,
                         help='validation dataset path (default: None)')
@@ -180,6 +187,8 @@ def get_args_parser():
                         help='validation labels path (default: None)')
     parser.add_argument('--val_labels_mask_path', default='', type=str,
                         help='validation labels path (default: None)')
+    parser.add_argument('--val_label_map_path', default='', type=str,
+                    help='val label mappings path')
 
     ##Overfit Case params
     parser.add_argument('--overfit', type=bool, default=False,
@@ -213,7 +222,7 @@ def get_args_parser():
     parser.add_argument('--seed', default=0, type=int)
     parser.add_argument('--resume', default='',
                         help='resume from checkpoint')
-    
+
     parser.add_argument('--plot_attention_map', action='store_true', default=False)
     parser.add_argument('--plot_embeddings', action='store_true', default=False)
     parser.add_argument('--save_embeddings', action='store_true', default=False,
@@ -242,6 +251,49 @@ def get_args_parser():
 
     return parser
 
+def calculate_baseline_metrics(labels, train_labels_mean):
+    """
+    Calculate baseline metrics for random guesses based on the mean of training labels.
+
+    Args:
+        train_labels (torch.Tensor): Tensor of labels.
+        train_labels_mean (float): Mean of the training labels used for making random guesses.
+
+    Returns:
+        dict: Dictionary containing MAE and std of random guesses.
+    """
+    # Create random guesses for both training and validation datasets based on the training labels mean
+    random_guess = torch.ones_like(labels) * train_labels_mean
+    # Calculate Mean Absolute Error (MAE) for both datasets
+    MAE_random_guess = mean_absolute_error(random_guess, labels, multioutput="raw_values")
+    # Calculate standard deviation of absolute errors
+    std_random_guess = torch.std(torch.abs(random_guess - labels), dim=0, unbiased=True).mean().item()
+
+    return {
+        'Random guess MAE': MAE_random_guess,
+        'Random guess std': std_random_guess,
+    }
+
+def custom_collate_fn(batch, mean, std):
+    """
+    Custom collate function for dataloading that accepts varying input sizes.
+    Args:
+        batch (list of tuples): The batch data - list accepting varying sample sizes
+        mean (float): The training set mean
+        std (float): The training set std
+
+    Returns:
+        list: A list containing normalized batch data with samples, normalized labels, and label masks.
+    """
+    samples = [item[0] for item in batch]
+    labels = [item[1] for item in batch]
+    label_masks = [item[2] for item in batch]
+    labels_tensor = torch.stack(labels)
+
+    # Normalize labels
+    labels_normalized = (labels_tensor - mean) / (std + 1e-8)
+    return [samples, labels_normalized, torch.stack(label_masks)]
+
 def main(args):
     args.input_size = (args.input_channels, args.input_electrodes, args.time_steps)
     args.patch_size = (args.patch_height, args.patch_width)
@@ -260,19 +312,43 @@ def main(args):
     np.random.seed(seed)
 
     cudnn.benchmark = True
-    
-    dataset_train = SignalDataset(data_path=args.data_path, labels_path=args.labels_path, 
+
+    args.electrode_idx = [int(idx) for idx in args.electrode_idx.split(',')] if args.electrode_idx else None
+
+    # For fixing the indices for reproducability
+    train_idx = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35,
+    36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 67, 69, 70,
+    71, 72, 73, 74, 76, 77, 78, 81, 83, 84, 85, 86, 87, 88, 89, 90, 91, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 104, 105, 106, 107,
+    108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 129, 130, 131, 133, 134,
+    135, 136, 138, 139, 140, 141, 142, 143, 144, 145, 146, 148, 149, 151, 152, 153, 154, 156, 157, 158, 159, 160, 161, 162, 163, 164,
+    166, 167, 168, 169, 170, 171, 173, 175, 177, 178, 179, 180, 181, 182, 183, 185, 186, 187, 189, 190, 192, 193, 194, 195, 196, 197,
+    198, 199, 200, 201, 202, 203, 204, 205, 206, 207, 209]
+
+    val_idx = [66, 68, 75, 79, 80,  82, 92, 103, 132, 137, 147, 150, 155, 165, 172, 174, 176, 184,
+    188, 191, 208]
+
+    dataset_train = SignalDataset(data_path=args.data_path, labels_path=args.labels_path,
                                   labels_mask_path=args.labels_mask_path,
-                                  downstream_task=args.downstream_task, train=True, args=args)
-    dataset_val = SignalDataset(data_path=args.val_data_path, labels_path=args.val_labels_path, 
-                                labels_mask_path=args.val_labels_mask_path, 
-                                downstream_task=args.downstream_task, train=False, args=args)
+                                  label_map_path=args.label_map_path,
+                                  downstream_task=args.downstream_task, train=True, indices=train_idx, args=args)
+    dataset_val = SignalDataset(data_path=args.data_path, labels_path=args.labels_path,
+                                  labels_mask_path=args.labels_mask_path,
+                                  label_map_path=args.label_map_path,
+                                  downstream_task=args.downstream_task, train=False, indices=val_idx, args=args)
 
     # train balanced
     class_weights = 2.0 / (2.0 * torch.Tensor([1.0, 1.0])) # total_nb_samples / (nb_classes * samples_per_class)
 
     print("Training set size: ", len(dataset_train))
     print("Validation set size: ", len(dataset_val))
+
+    train_labels = dataset_train.labels
+    val_labels = dataset_val.labels
+
+    args.train_labels_mean = train_labels.mean()
+    args.train_labels_std = train_labels.std()
+
+    collate_fn_with_stats = partial(custom_collate_fn, mean=args.train_labels_mean, std=args.train_labels_std)
 
     if True:  # args.distributed:
         num_tasks = misc.get_world_size()
@@ -311,24 +387,33 @@ def main(args):
         else:
             wandb.init(project=args.wandb_project, name=args.wandb_name, config=config, entity="begum-soenmez")
 
+    #Random Guess
+    baseline_metrics_train = calculate_baseline_metrics(train_labels, args.train_labels_mean)
+    baseline_metrics_val = calculate_baseline_metrics(val_labels, args.train_labels_mean)
+
+    args.baseline_metrics_train = baseline_metrics_train
+    args.baseline_metrics_val = baseline_metrics_val
+
     data_loader_train = torch.utils.data.DataLoader(
-        dataset_train, 
+        dataset_train,
         sampler=sampler_train,
         # shuffle=True,
         batch_size=args.batch_size,
         num_workers=args.num_workers,
         pin_memory=args.pin_mem,
         drop_last=False,
+        collate_fn = collate_fn_with_stats
     )
 
     data_loader_val = torch.utils.data.DataLoader(
-        dataset_val, 
+        dataset_val,
         sampler=sampler_val,
         # shuffle=False,
         batch_size=args.batch_size,
         num_workers=args.num_workers,
         pin_memory=args.pin_mem,
-        drop_last=False
+        drop_last=False,
+        collate_fn = collate_fn_with_stats
     )
 
     mixup_fn = None
@@ -339,7 +424,7 @@ def main(args):
             mixup_alpha=args.mixup, cutmix_alpha=args.cutmix, cutmix_minmax=args.cutmix_minmax,
             prob=args.mixup_prob, switch_prob=args.mixup_switch_prob, mode=args.mixup_mode,
             label_smoothing=args.smoothing, num_classes=args.nb_classes)
-    
+
     model = models_vit.__dict__[args.model](
         img_size=args.input_size,
         patch_size=args.patch_size,
@@ -381,7 +466,7 @@ def main(args):
 
         # manually initialize fc layer
         trunc_normal_(model.head.weight, std=0.01)#2e-5)
-    
+
     model.to(device, non_blocking=True)
 
     model_without_ddp = model
@@ -391,7 +476,7 @@ def main(args):
     print("Number of params (M): %.2f" % (n_parameters / 1.e6))
 
     eff_batch_size = args.batch_size * args.accum_iter * misc.get_world_size()
-    
+
     if args.lr is None:  # only base_lr is specified
         args.lr = args.blr * eff_batch_size / 4
 
@@ -419,7 +504,7 @@ def main(args):
         criterion = SoftTargetCrossEntropy()
     elif args.smoothing > 0.:
         # criterion = LabelSmoothingCrossEntropy(smoothing=args.smoothing)
-        criterion = torch.nn.CrossEntropyLoss(weight=class_weights, label_smoothing=args.smoothing) 
+        criterion = torch.nn.CrossEntropyLoss(weight=class_weights, label_smoothing=args.smoothing)
     else:
         criterion = torch.nn.CrossEntropyLoss(weight=class_weights)
 
@@ -449,7 +534,7 @@ def main(args):
                 print(f"Root Mean Squared Error (RMSE) / Mean Absolute Error (MAE) / MAE in Years / Pearson Correlation Coefficient (PCC) / R Squared (R2)",
                       f"of the network on the {len(dataset_val)} test images: {test_stats['rmse']:.4f} / {test_stats['mae']:.4f} / {test_stats['mae_years']:.4f} /",
                       f"{test_stats['pcc']:.4f} / {test_stats['r2']:.4f}")
-        
+
             if args.wandb:
                 wandb.log(test_history)
 
@@ -457,14 +542,14 @@ def main(args):
 
     # Define callbacks
     early_stop = EarlyStop(patience=args.patience, max_delta=args.max_delta)
-    
+
     print(f"Start training for {args.epochs} epochs")
 
     if args.downstream_task == 'classification':
         eval_criterion = "auroc"
     elif args.downstream_task == 'regression':
         eval_criterion = "pcc"
-    
+
     best_stats = {'loss':np.inf, 'acc':0.0, 'f1':0.0, 'auroc':0.0, 'auprc':0.0, 'rmse':np.inf, 'mae':np.inf, 'mae_years':np.inf, 'pcc':0.0, 'r2':-1.0}
     best_eval_scores = {'count':0, 'nb_ckpts_max':5, 'eval_criterion':[best_stats[eval_criterion]]}
     for epoch in range(args.start_epoch, args.epochs):
@@ -472,8 +557,8 @@ def main(args):
 
         if True: #args.distributed:
             data_loader_train.sampler.set_epoch(epoch)
-        
-        train_stats, train_history = train_one_epoch(model, criterion, data_loader_train, optimizer, device, epoch, 
+
+        train_stats, train_history = train_one_epoch(model, criterion, data_loader_train, optimizer, device, epoch,
                                                      loss_scaler, args.clip_grad, mixup_fn, log_writer=log_writer, args=args)
 
         test_stats, test_history = evaluate(data_loader_val, model, device, epoch, log_writer=log_writer, args=args)
@@ -492,7 +577,7 @@ def main(args):
 
                 misc.save_best_model(
                     args=args, model=model, model_without_ddp=model_without_ddp, optimizer=optimizer,
-                    loss_scaler=loss_scaler, epoch=epoch, test_stats=test_stats, evaluation_criterion=eval_criterion, 
+                    loss_scaler=loss_scaler, epoch=epoch, test_stats=test_stats, evaluation_criterion=eval_criterion,
                     mode="decreasing")
         else:
             if early_stop.evaluate_increasing_metric(val_metric=test_stats[eval_criterion]):
@@ -508,11 +593,11 @@ def main(args):
 
                 misc.save_best_model(
                     args=args, model=model, model_without_ddp=model_without_ddp, optimizer=optimizer,
-                    loss_scaler=loss_scaler, epoch=epoch, test_stats=test_stats, evaluation_criterion=eval_criterion, 
+                    loss_scaler=loss_scaler, epoch=epoch, test_stats=test_stats, evaluation_criterion=eval_criterion,
                     mode="increasing")
 
         best_stats['loss'] = min(best_stats['loss'], test_stats['loss'])
-        
+
         if args.downstream_task == 'classification':
             # update best stats
             best_stats['f1'] = max(best_stats['f1'], test_stats['f1'])
@@ -538,7 +623,7 @@ def main(args):
                   f"{test_stats['pcc']:.4f} / {test_stats['r2']:.4f}")
             print(f'Min Root Mean Squared Error (RMSE) / Min Mean Absolute Error (MAE) / Min MAE in Years / Max Pearson Correlation Coefficient (PCC) /',
                   f'Max R Squared (R2): {best_stats["rmse"]:.4f} / {best_stats["mae"]:.4f} / {best_stats["mae_years"]:.4f} / {best_stats["pcc"]:.4f} / {best_stats["r2"]:.4f}\n')
-        
+
         log_stats = {**{f'train_{k}': str(v) for k, v in train_stats.items()},
                         **{f'test_{k}': str(v) for k, v in test_stats.items()},
                         'epoch': epoch,
@@ -556,9 +641,6 @@ def main(args):
 
     if args.wandb:
         wandb.log({f'Best Statistics/{k}': v for k, v in best_stats.items()})
-    
-    metrics = {'r2': best_stats['r2'], 'mae': best_stats['mae_years']}
-    print(json.dumps(metrics))
 
 if __name__ == '__main__':
     args = get_args_parser()
@@ -569,6 +651,6 @@ if __name__ == '__main__':
         #if args.overfit == False:
             #directory_name = f"/vol/aimspace/users/soeb/EXP1_output_finetune_lemon/AR_Finetune_BATCH{args.batch_size}_BLR{args.blr}"
             #Path(directory_name).mkdir(parents=True, exist_ok=True)
-            
+
             #args.output_dir = directory_name
     main(args)

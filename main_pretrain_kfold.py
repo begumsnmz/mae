@@ -233,7 +233,7 @@ def custom_collate_fn(batch, mean, std):
 
 def prepare_datasets(dataset, k_folds, args):
     if k_folds > 1:
-        kf = KFold(n_splits=k_folds, shuffle=True, random_state=args.seed)
+        kf = KFold(n_splits=k_folds, shuffle=True, random_state=58)
         splits = list(kf.split(dataset))
     else:
         # If no cross-validation, just split the dataset into train and validation in some ratio (e.g., 80-20)

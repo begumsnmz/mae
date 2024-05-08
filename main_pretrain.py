@@ -36,7 +36,7 @@ from sklearn.metrics import mean_absolute_error
 from engine_pretrain import train_one_epoch, evaluate_online, evaluate
 
 from util.dataset import SignalDataset
-import json
+from functools import partial
 
 
 def get_args_parser():
@@ -72,6 +72,8 @@ def get_args_parser():
                         help='input length')
     parser.add_argument('--input_size', default=(5, 65, 37000), type=Tuple,
                         help='images input size')
+    parser.add_argument('--electrode_idx', type=int, nargs='*', default=None,
+                        help='Electrode indices to slice')
 
     parser.add_argument('--patch_height', type=int, default=65, metavar='N',
                         help='patch height')
@@ -79,10 +81,6 @@ def get_args_parser():
                         help='patch width')
     parser.add_argument('--patch_size', default=(65, 200), type=Tuple,
                         help='patch size')
-
-    #K-Fold case
-    parser.add_argument('--fold', type=int, default=-1,
-                        help='Current fold')
 
     # Label statistics
     parser.add_argument('--train_labels_mean', type=float, default=0.0,
@@ -137,7 +135,7 @@ def get_args_parser():
     parser.add_argument('--max_delta', default=0, type=float,
                         help='Early stopping threshold (val has to be worse than (train+delta)) (default: 0)')
 
-    parser.add_argument('--online_evaluation', action='store_true', default=False,
+    parser.add_argument('--online_evaluation', action='store_true', default=True,
                         help='Perform online evaluation of a downstream task')
     parser.add_argument('--online_evaluation_task', default='classification', type=str,
                         help='Online downstream task (default: classification)')
@@ -197,13 +195,48 @@ def get_args_parser():
 
     return parser
 
-def custom_collate(batch):
-    # A batch is a list of tuples where each tuple is the output of __getitem__ from your dataset
-    data = [item[0] for item in batch]
-    labels = [item[1] for item in batch]
-    masks = [item[2] for item in batch]
+def calculate_baseline_metrics(labels, train_labels_mean):
+    """
+    Calculate baseline metrics for random guesses based on the mean of training labels.
 
-    return [data, torch.stack(labels), torch.stack(masks)]
+    Args:
+        train_labels (torch.Tensor): Tensor of labels.
+        train_labels_mean (float): Mean of the training labels used for making random guesses.
+
+    Returns:
+        dict: Dictionary containing MAE and std of random guesses.
+    """
+    # Create random guesses for both training and validation datasets based on the training labels mean
+    random_guess = torch.ones_like(labels) * train_labels_mean
+    # Calculate Mean Absolute Error (MAE) for both datasets
+    MAE_random_guess = mean_absolute_error(random_guess, labels, multioutput="raw_values")
+    # Calculate standard deviation of absolute errors
+    std_random_guess = torch.std(torch.abs(random_guess - labels), dim=0, unbiased=True).mean().item()
+
+    return {
+        'Random guess MAE': MAE_random_guess,
+        'Random guess std': std_random_guess,
+    }
+
+def custom_collate_fn(batch, mean, std):
+    """
+    Custom collate function for dataloading that accepts varying input sizes.
+    Args:
+        batch (list of tuples): The batch data - list accepting varying sample sizes
+        mean (float): The training set mean
+        std (float): The training set std
+
+    Returns:
+        list: A list containing normalized batch data with samples, normalized labels, and label masks.
+    """
+    samples = [item[0] for item in batch]
+    labels = [item[1] for item in batch]
+    label_masks = [item[2] for item in batch]
+    labels_tensor = torch.stack(labels)
+
+    # Normalize labels
+    labels_normalized = (labels_tensor - mean) / (std + 1e-8)
+    return [samples, labels_normalized, torch.stack(label_masks)]
 
 
 def main(args):
@@ -260,6 +293,31 @@ def main(args):
             #wandb.init(project=args.wandb_project, name=args.wandb_name, config=config, entity="begum-soenmez")
             wandb.init(project=args.wandb_project, config=config, entity="begum-soenmez")
 
+
+    # online evaluation
+    if args.online_evaluation:
+        dataset_online_train = SignalDataset(data_path=args.data_path_online, labels_path=args.labels_path_online,
+                                             labels_mask_path=args.labels_mask_path_online,
+                                             label_map_path=args.label_map_path,
+                                             downstream_task=args.online_evaluation_task, train=True, args=args)
+
+        dataset_online_val = SignalDataset(data_path=args.val_data_path_online, labels_path=args.val_labels_path_online,
+                                           labels_mask_path=args.val_labels_mask_path_online,
+                                           label_map_path=args.val_label_map_path,
+                                           downstream_task=args.online_evaluation_task, train=False, args=args)
+
+        train_labels = dataset_online_train.labels
+        val_labels = dataset_online_val.labels
+
+        args.train_labels_mean = train_labels.mean()
+        args.train_labels_std = train_labels.std()
+
+    else:
+        args.train_labels_mean = 0
+        args.train_labels_std = 1
+
+    collate_fn_with_stats = partial(custom_collate_fn, mean=args.train_labels_mean, std=args.train_labels_std)
+
     data_loader_train = torch.utils.data.DataLoader(
         dataset_train,
         sampler=sampler_train,
@@ -268,7 +326,7 @@ def main(args):
         num_workers=args.num_workers,
         pin_memory=args.pin_mem,
         drop_last=False,
-        collate_fn = custom_collate
+        collate_fn = collate_fn_with_stats
     )
 
     data_loader_val = torch.utils.data.DataLoader(
@@ -279,35 +337,16 @@ def main(args):
         num_workers=args.num_workers,
         pin_memory=args.pin_mem,
         drop_last=False,
-        collate_fn = custom_collate
+        collate_fn = collate_fn_with_stats
     )
 
-    # online evaluation
     if args.online_evaluation:
-        dataset_online_train = SignalDataset(data_path=args.data_path_online, labels_path=args.labels_path_online,
-                                             labels_mask_path=args.labels_mask_path_online,
-                                             label_map_path=args.label_map_path,
-                                             downstream_task=args.online_evaluation_task, train=True, args=args)
-        #Random guessing stats
-        if torch.all(dataset_online_train.labels != 0):
-            labels_denorm = dataset_online_train.labels * args.train_labels_std + args.train_labels_mean
-        else:
-            labels_norm = torch.tensor(list(dataset_online_train.label_map.values()))
-            labels_denorm = labels_norm * args.train_labels_std + args.train_labels_mean
+        #Random Guess
+        baseline_metrics_train = calculate_baseline_metrics(train_labels, args.train_labels_mean)
+        baseline_metrics_val = calculate_baseline_metrics(val_labels, args.train_labels_mean)
 
-        random_guess = torch.ones_like(labels_denorm)*args.train_labels_mean
-        MAE_random_guess = mean_absolute_error(random_guess, labels_denorm, multioutput="raw_values")
-
-        abs_errors_random= torch.abs(random_guess - labels_denorm)
-        std_random_guess = torch.std(abs_errors_random, dim=0, unbiased=True).mean().item()
-
-        print("Random guess MAE: " ,MAE_random_guess)
-        print("Random guess std: " ,std_random_guess)
-
-        dataset_online_val = SignalDataset(data_path=args.val_data_path_online, labels_path=args.val_labels_path_online,
-                                           labels_mask_path=args.val_labels_mask_path_online,
-                                           label_map_path=args.val_label_map_path,
-                                           downstream_task=args.online_evaluation_task, train=False, args=args)
+        args.baseline_metrics_train = baseline_metrics_train
+        args.baseline_metrics_val = baseline_metrics_val
 
         data_loader_online_train = torch.utils.data.DataLoader(
             dataset_online_train,
@@ -316,7 +355,7 @@ def main(args):
             num_workers=args.num_workers,
             pin_memory=args.pin_mem,
             drop_last=False,
-        )
+            collate_fn=collate_fn_with_stats)
 
         data_loader_online_val = torch.utils.data.DataLoader(
             dataset_online_val,
@@ -325,7 +364,7 @@ def main(args):
             num_workers=args.num_workers,
             pin_memory=args.pin_mem,
             drop_last=False,
-        )
+            collate_fn=collate_fn_with_stats)
 
     # define the model
     model = models_mae.__dict__[args.model](
@@ -454,9 +493,6 @@ def main(args):
         if args.wandb:
             wandb.log(train_history | test_history | online_history | {"Time per epoch [sec]": total_time})
 
-    metrics = {'val_ncc': best_stats['ncc']}
-    print(json.dumps(metrics))
-
 
 if __name__ == '__main__':
     args = get_args_parser()
@@ -464,12 +500,8 @@ if __name__ == '__main__':
     if args.output_dir:
         Path(args.output_dir).mkdir(parents=True, exist_ok=True)
     else:
-        if args.fold != -1:
-            directory_name = f"/vol/aimspace/users/soeb/EXP1_output_pretrain_lemon/Fold{args.fold}_AR_Pretrain_BATCH{args.batch_size}_BLR{args.blr}"
-            Path(directory_name).mkdir(parents=True, exist_ok=True)
-        else:
-            directory_name = f"/vol/aimspace/users/soeb/EXP2_output_pretrain_tuh/PCT{args.scale_percentage}_Pretrain_BATCH{args.batch_size}_BLR{args.blr}"
-            Path(directory_name).mkdir(parents=True, exist_ok=True)
+        directory_name = f"/vol/aimspace/users/soeb/EXP2_output_pretrain_tuh/PCT{args.scale_percentage}_Pretrain_BATCH{args.batch_size}_BLR{args.blr}"
+        Path(directory_name).mkdir(parents=True, exist_ok=True)
 
         args.output_dir = directory_name
     main(args)

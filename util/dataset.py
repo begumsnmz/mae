@@ -62,7 +62,7 @@ class SignalDataset(Dataset):
         elif labels_path:
             self.labels = torch.load(labels_path, map_location=torch.device('cpu'))
         else:
-            if self.file_paths:
+            if self.mode == 'files':
                 self.labels = torch.zeros(size=(len(self.file_paths), ))
             else:
                 self.labels = torch.zeros(size=(len(self.data), ))
@@ -86,6 +86,7 @@ class SignalDataset(Dataset):
 
         # Subset the data if indices are provided
         if indices is not None:
+            print(indices)
             if self.mode == 'tensor':
                 self.data = self.data[indices]
             else:
@@ -121,9 +122,6 @@ class SignalDataset(Dataset):
             else:
                 data = data[..., :self.args.input_electrodes, :]
 
-            #filename = os.path.basename(self.file_paths[idx])
-            #label = torch.tensor(self.label_map.get(filename, torch.tensor(0)))
-            #label = label.unsqueeze(dim=1)
             label = self.labels[idx]
             label_mask = self.labels_mask[idx] if self.labels_mask is not None else torch.tensor(1)
 

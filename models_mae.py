@@ -25,7 +25,7 @@ class MaskedAutoencoderViT(nn.Module):
     def __init__(self, img_size=(1, 65, 68096), patch_size=(65, 112),
                  embed_dim=1024, depth=24, num_heads=16,
                  decoder_embed_dim=512, decoder_depth=8, decoder_num_heads=16,
-                 mlp_ratio=4., norm_layer=nn.LayerNorm, norm_pix_loss=False, 
+                 mlp_ratio=4., norm_layer=nn.LayerNorm, norm_pix_loss=False,
                  ncc_weight:float=0.0):
         super().__init__()
 
@@ -33,7 +33,7 @@ class MaskedAutoencoderViT(nn.Module):
         # MAE encoder specifics
         self.patch_embed = PatchEmbed(img_size, patch_size, embed_dim)
         num_patches = self.patch_embed.num_patches
-        
+
         self.cls_token = nn.Parameter(torch.zeros(1, 1, embed_dim))
         self.pos_embed = nn.Parameter(torch.zeros(1, num_patches + 1, embed_dim), requires_grad=False)  # fixed sin-cos embedding
 
@@ -87,7 +87,7 @@ class MaskedAutoencoderViT(nn.Module):
         # --------------------------------------------------------------------------
 
         self.norm_pix_loss = norm_pix_loss
-        
+
         self.ncc_weight = ncc_weight
 
         self.initialize_weights()
@@ -145,7 +145,7 @@ class MaskedAutoencoderViT(nn.Module):
         p, q = self.patch_embed.patch_size
         h, w = self.patch_embed.grid_size
         assert h * w == x.shape[1]
-        
+
         img_channels = int(x.shape[2] / (p*q))
 
         x = x.reshape(shape=(x.shape[0], h, w, p, q, img_channels))
@@ -161,9 +161,9 @@ class MaskedAutoencoderViT(nn.Module):
         """
         N, L, D = x.shape  # batch, length, dim
         len_keep = int(L * (1 - mask_ratio))
-        
+
         noise = torch.rand(N, L, device=x.device)  # noise in [0, 1]
-        
+
         # sort noise for each sample
         ids_shuffle = torch.argsort(noise, dim=1)  # ascend: small is keep, large is remove
         ids_restore = torch.argsort(ids_shuffle, dim=1)
@@ -203,15 +203,12 @@ class MaskedAutoencoderViT(nn.Module):
 
         return x, mask, ids_restore
 
-    def forward_encoder_all_patches(self, x, mask_ratio):
+    def forward_encoder_all_patches(self, x):
         # embed patches
         x = self.patch_embed(x)
 
         # add pos embed w/o cls token
         x = x + self.pos_embed[:, 1:, :]
-
-        # masking: length -> length * mask_ratio
-        x, _, _= self.random_masking(x, mask_ratio)
 
         # append cls token
         cls_token = self.cls_token + self.pos_embed[:, :1, :]
@@ -317,7 +314,7 @@ class MaskedAutoencoderViT(nn.Module):
 
         z1 = latent[:, 1:, ...].mean(dim=1)     # global average pooling
         z2 = latent2[:, 1:, ...].mean(dim=1)    # global average pooling
-        
+
         p1 = self.projector(z1)
         p2 = self.projector(z2)
 
@@ -333,7 +330,7 @@ class MaskedAutoencoderViT(nn.Module):
         cos_embed = self.criterion(z1, z2).mean()
 
         # determine the std across all embeddings in the batch
-        z_std = torch.nn.functional.normalize(z1, dim=-1).std(dim=0).mean() * z1.shape[-1]**0.5 
+        z_std = torch.nn.functional.normalize(z1, dim=-1).std(dim=0).mean() * z1.shape[-1]**0.5
 
         return loss, loss_cos, cos_embed, z_std, imgs_hat, imgs_hat_masked
 
