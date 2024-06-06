@@ -39,6 +39,7 @@ import models_vit
 from engine_finetune import train_one_epoch, evaluate
 from functools import partial
 from sklearn.metrics import mean_absolute_error
+import pickle
 
 
 def get_args_parser():
@@ -188,7 +189,10 @@ def get_args_parser():
     parser.add_argument('--val_labels_mask_path', default='', type=str,
                         help='validation labels path (default: None)')
     parser.add_argument('--val_label_map_path', default='', type=str,
-                    help='val label mappings path')
+                        help='val label mappings path')
+    parser.add_argument('--subject_file_path', default='', type=str,
+                        help='path to subject id info file')
+
 
     ##Overfit Case params
     parser.add_argument('--overfit', type=bool, default=False,
@@ -315,26 +319,23 @@ def main(args):
 
     args.electrode_idx = [int(idx) for idx in args.electrode_idx.split(',')] if args.electrode_idx else None
 
-    # For fixing the indices for reproducability
-    train_idx = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35,
-    36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 67, 69, 70,
-    71, 72, 73, 74, 76, 77, 78, 81, 83, 84, 85, 86, 87, 88, 89, 90, 91, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 104, 105, 106, 107,
-    108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 129, 130, 131, 133, 134,
-    135, 136, 138, 139, 140, 141, 142, 143, 144, 145, 146, 148, 149, 151, 152, 153, 154, 156, 157, 158, 159, 160, 161, 162, 163, 164,
-    166, 167, 168, 169, 170, 171, 173, 175, 177, 178, 179, 180, 181, 182, 183, 185, 186, 187, 189, 190, 192, 193, 194, 195, 196, 197,
-    198, 199, 200, 201, 202, 203, 204, 205, 206, 207, 209]
+    # Load the splits.pkl file
+    splits_file = '/vol/aimspace/users/soeb/splits.pkl'
+    with open(splits_file, 'rb') as f:
+        splits = pickle.load(f)
 
-    val_idx = [66, 68, 75, 79, 80,  82, 92, 103, 132, 137, 147, 150, 155, 165, 172, 174, 176, 184,
-    188, 191, 208]
+    # Choose one fold to fix
+    fold_index = 0
+    train_idx, val_idx = splits[fold_index]
 
     dataset_train = SignalDataset(data_path=args.data_path, labels_path=args.labels_path,
                                   labels_mask_path=args.labels_mask_path,
                                   label_map_path=args.label_map_path,
-                                  downstream_task=args.downstream_task, train=True, indices=train_idx, args=args)
+                                  downstream_task=args.downstream_task, train=True, indices=train_idx, shape=(7042, 61, 3000), args=args)
     dataset_val = SignalDataset(data_path=args.data_path, labels_path=args.labels_path,
                                   labels_mask_path=args.labels_mask_path,
                                   label_map_path=args.label_map_path,
-                                  downstream_task=args.downstream_task, train=False, indices=val_idx, args=args)
+                                  downstream_task=args.downstream_task, train=False, indices=val_idx, shape=(7042, 61, 3000), args=args)
 
     # train balanced
     class_weights = 2.0 / (2.0 * torch.Tensor([1.0, 1.0])) # total_nb_samples / (nb_classes * samples_per_class)

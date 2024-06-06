@@ -96,8 +96,13 @@ def train_one_epoch(model: torch.nn.Module,
         with torch.cuda.amp.autocast():
             loss, loss_cos, cos_embed, z_std, samples_hat, samples_hat_masked = model(samples, mask_ratio=args.mask_ratio)
 
-        if not torch.isfinite(loss):
-            print("Loss is {}, stopping training".format(loss))
+        loss_value = loss.item()
+        loss_cos_value = loss_cos.item()
+        cos_embed_value = cos_embed.item()
+        z_std_value = z_std.item()
+
+        if not math.isfinite(loss_value):
+            print("Loss is {}, stopping training".format(loss_value))
             sys.exit(1)
 
         loss /= accum_iter
@@ -113,12 +118,7 @@ def train_one_epoch(model: torch.nn.Module,
 
         torch.cuda.synchronize()
 
-        loss_value = loss.detach()
-        loss_cos_value = loss_cos.detach()
-        cos_embed_value = cos_embed.detach()
-        z_std_value = z_std.detach()
-
-        metric_logger.update(loss=loss_value.item())
+        metric_logger.update(loss=loss_value)
         if profiler:
             profiler.step()
 
@@ -126,11 +126,11 @@ def train_one_epoch(model: torch.nn.Module,
         metric_logger.update(lr=lr)
 
         batch_size = samples.shape[0]
-        metric_logger.meters['loss_cos'].update(loss_cos_value.item(), n=batch_size)
-        metric_logger.meters['cos_embed'].update(cos_embed_value.item(), n=batch_size)
-        metric_logger.meters['z_std'].update(z_std_value.item(), n=batch_size)
+        metric_logger.meters['loss_cos'].update(loss_cos_value, n=batch_size)
+        metric_logger.meters['cos_embed'].update(cos_embed_value, n=batch_size)
+        metric_logger.meters['z_std'].update(z_std_value, n=batch_size)
 
-        normalized_corr = ncc(samples, samples_hat).detach().item()
+        normalized_corr = ncc(samples, samples_hat).item()
         metric_logger.meters['ncc'].update(normalized_corr, n=batch_size)
 
         #loss_value_reduce = misc.all_reduce_mean(loss_value)

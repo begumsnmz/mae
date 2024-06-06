@@ -36,7 +36,8 @@ from sklearn.metrics import mean_absolute_error
 from engine_pretrain import train_one_epoch, evaluate_online, evaluate
 
 from util.dataset import SignalDataset
-from functools import partial
+from torch.profiler import profile, ProfilerActivity, tensorboard_trace_handler
+from memory_profiler import profile
 
 
 def get_args_parser():
@@ -72,8 +73,8 @@ def get_args_parser():
                         help='input length')
     parser.add_argument('--input_size', default=(5, 65, 37000), type=Tuple,
                         help='images input size')
-    parser.add_argument('--electrode_idx', type=str, default=None,
-                        help='Comma-separated electrode indices to slice')
+    parser.add_argument('--electrode_idx', type=int, nargs='*', default=None,
+                        help='Electrode indices to slice')
 
     parser.add_argument('--patch_height', type=int, default=65, metavar='N',
                         help='patch height')
@@ -160,6 +161,8 @@ def get_args_parser():
                         help='validation labels path for the online evaluation')
     parser.add_argument('--val_labels_mask_path_online', default='', type=str,
                         help='labels path (default: None)')
+    parser.add_argument('--subject_file_path', default='', type=str,
+                        help='path to subject id info file')
 
     parser.add_argument('--output_dir', default='',
                         help='path where to save, empty for no saving')
@@ -218,30 +221,6 @@ def calculate_baseline_metrics(labels, train_labels_mean):
         'Random guess std': std_random_guess,
     }
 
-def custom_collate_fn(batch, mean, std):
-    """
-    Custom collate function for dataloading that accepts varying input sizes.
-    Args:
-        batch (list of tuples): The batch data - list accepting varying sample sizes
-        mean (float): The training set mean
-        std (float): The training set std
-
-    Returns:
-        list: A list containing normalized batch data with samples, normalized labels, and label masks.
-    """
-    if isinstance(batch[0][0], (tuple, list)):
-        # Flatten the batch list of tuples
-        batch = [item for sublist in batch for item in sublist]
-
-    samples = [item[0] for item in batch]
-    labels = [item[1] for item in batch]
-    label_masks = [item[2] for item in batch]
-    labels_tensor = torch.stack(labels)
-
-    # Normalize labels
-    labels_normalized = (labels_tensor - mean) / (std + 1e-8)
-    return [samples, labels_normalized, torch.stack(label_masks)]
-
 
 def main(args):
     args.input_size = (args.input_channels, args.input_electrodes, args.time_steps)
@@ -263,11 +242,9 @@ def main(args):
 
     cudnn.benchmark = True
 
-    args.electrode_idx = [int(idx) for idx in args.electrode_idx.split(',')] if args.electrode_idx else None
-
     # load data
-    dataset_train = SignalDataset(data_path=args.data_path, train=True, args=args)
-    dataset_val = SignalDataset(data_path=args.val_data_path, train=False, num_chunks=100, args=args)
+    dataset_train = SignalDataset(data_path=args.data_path, train=True, shape=(266871,19,10000), args=args)
+    dataset_val = SignalDataset(data_path=args.val_data_path, train=False, shape=(64818,19,10000), args=args)
 
     print("Training set size: ", len(dataset_train))
     print("Validation set size: ", len(dataset_val))
@@ -322,7 +299,6 @@ def main(args):
         args.train_labels_mean = 0
         args.train_labels_std = 1
 
-    collate_fn_with_stats = partial(custom_collate_fn, mean=args.train_labels_mean, std=args.train_labels_std)
 
     data_loader_train = torch.utils.data.DataLoader(
         dataset_train,
@@ -330,20 +306,20 @@ def main(args):
         # shuffle=True,
         batch_size=args.batch_size,
         num_workers=args.num_workers,
-        pin_memory=args.pin_mem,
+        pin_memory=True,
         drop_last=False,
-        collate_fn = collate_fn_with_stats
+        prefetch_factor=4
     )
 
     data_loader_val = torch.utils.data.DataLoader(
         dataset_val,
         sampler=sampler_val,
         # shuffle=False,
-        batch_size=1,
+        batch_size=args.batch_size,
         num_workers=args.num_workers,
-        pin_memory=args.pin_mem,
+        pin_memory=True,
         drop_last=False,
-        collate_fn = collate_fn_with_stats
+        prefetch_factor=4
     )
 
     if args.online_evaluation:
@@ -360,17 +336,15 @@ def main(args):
             batch_size=256,
             num_workers=args.num_workers,
             pin_memory=args.pin_mem,
-            drop_last=False,
-            collate_fn=collate_fn_with_stats)
+            drop_last=False)
 
         data_loader_online_val = torch.utils.data.DataLoader(
             dataset_online_val,
             shuffle=False,
-            batch_size=16,
+            batch_size=256,
             num_workers=args.num_workers,
             pin_memory=args.pin_mem,
-            drop_last=False,
-            collate_fn=collate_fn_with_stats)
+            drop_last=False)
 
     # define the model
     model = models_mae.__dict__[args.model](
@@ -423,23 +397,31 @@ def main(args):
 
     best_stats = {'loss':np.inf, 'ncc':0.0}
     best_eval_scores = {'count':0, 'nb_ckpts_max':5, 'eval_criterion':[best_stats[eval_criterion]]}
+
+    '''
+    #Setup Pytorch Profiler
+    with profile(
+        activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA],
+        schedule=torch.profiler.schedule(wait=1, warmup=1, active=5, repeat=1),
+        on_trace_ready=tensorboard_trace_handler('/vol/aimspace/users/soeb/logs'),
+        record_shapes=True,
+        profile_memory=True,
+        with_stack=True
+    ) as prof:
+    '''
+
     for epoch in range(args.start_epoch, args.epochs):
-        args.current_epoch = epoch
         start_time = time.time()
 
         if True: #args.distributed:
             data_loader_train.sampler.set_epoch(epoch)
 
         train_stats, train_history = train_one_epoch(model, data_loader_train, optimizer, device, epoch, loss_scaler,
-                                                     log_writer=log_writer, args=args)
-        # if args.output_dir and (epoch % 100 == 0 or epoch + 1 == args.epochs):
-        #     misc.save_model(
-        #         args=args, model=model, model_without_ddp=model_without_ddp, optimizer=optimizer,
-        #         loss_scaler=loss_scaler, epoch=epoch)
+                                                    log_writer=log_writer, profiler=None, args=args)
 
         val_stats, test_history = evaluate(data_loader_val, model, device, epoch, log_writer=log_writer, args=args)
         print(f"Loss / Normalized CC of the network on the {len(dataset_val)} val images: {val_stats['loss']:.4f}\
-               / {val_stats['ncc']:.2f}")
+            / {val_stats['ncc']:.2f}")
 
         # online evaluation of the downstream task
         online_history = {}
@@ -449,8 +431,8 @@ def main(args):
             elif args.online_evaluation_task == "regression":
                 online_estimator = LinearRegression()
             online_history = evaluate_online(estimator=online_estimator, model=model, device=device,
-                                             train_dataloader=data_loader_online_train,
-                                             val_dataloader=data_loader_online_val, args=args)
+                                            train_dataloader=data_loader_online_train,
+                                            val_dataloader=data_loader_online_val, args=args)
 
         best_stats['loss'] = min(best_stats['loss'], val_stats['loss'])
         best_stats['ncc'] = max(best_stats['ncc'], val_stats['ncc'])
@@ -507,7 +489,7 @@ if __name__ == '__main__':
     if args.output_dir:
         Path(args.output_dir).mkdir(parents=True, exist_ok=True)
     else:
-        directory_name = f"/vol/aimspace/users/soeb/EXP3_SEED_Pretrain/Pretrain_CHAN{args.input_electrodes}_BATCH{args.batch_size}_BLR{args.blr}_TIME{args.time_steps}"
+        directory_name = f"/vol/aimspace/users/soeb/EXP2_output_pretrain_tuh/PCT{args.scale_percentage}_Pretrain_BATCH{args.batch_size}_BLR{args.blr}_TIME{args.time_steps}"
         Path(directory_name).mkdir(parents=True, exist_ok=True)
 
         args.output_dir = directory_name

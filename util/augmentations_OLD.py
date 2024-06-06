@@ -46,10 +46,10 @@ class Shift(object):
         Randomly shift the signal in the time domain.
     """
     def __init__(self, fs=250, padding_len_sec=30) -> None:
-        self.padding_len = fs * padding_len_sec # padding len in ticks
+        self.padding_len = fs * padding_len_sec # padding len in ticks 
 
     def __call__(self, sample) -> Any:
-        # define padding size
+        # define padding size 
         left_pad = int(torch.rand(1) * self.padding_len)
         right_pad = self.padding_len - left_pad
 
@@ -77,8 +77,8 @@ class TimeToFourier(object):
         sample_dims = sample.dim()
 
         # define the output length of the Fourier transform
-        N = self.factor * sample.shape[-1]
-
+        N = self.factor * sample.shape[-1] 
+        
         # perform the Fourier transform and reorder the output to have negative frequencies first
         # note: the output of the Fourier transform is complex (real + imaginary part)
         X_f = 1/N * fft.fftshift(fft.fft(sample, n=N))
@@ -86,27 +86,27 @@ class TimeToFourier(object):
         X_f_complex = torch.Tensor()
 
         if self.unsqueeze == False:
-            # if you want real and imag part to be concatenated
+            # if you want real and imag part to be concatenated 
             # such that the output has shape [ch*2, time_steps]
             if sample_dims == 2:
                 for ch in range(X_f.shape[0]):
                     real_part = torch.real(X_f[ch, :]).unsqueeze(dim=0)
                     imag_part = torch.imag(X_f[ch, :]).unsqueeze(dim=0)
 
-                    # concatenate the real and imaginary parts
+                    # concatenate the real and imaginary parts 
                     complex_pair = torch.cat((real_part, imag_part), dim=0)
 
-                    # concatenate the channels
+                    # concatenate the channels 
                     X_f_complex = torch.cat((X_f_complex, complex_pair), dim=0)
             elif sample_dims == 3:
                 for bin in range(X_f.shape[0]):
                     X_f_bin_complex = torch.Tensor()
-
+                    
                     for ch in range(X_f.shape[1]):
                         real_part = torch.real(X_f[bin, ch, :]).unsqueeze(dim=0)
                         imag_part = torch.imag(X_f[bin, ch, :]).unsqueeze(dim=0)
 
-                        # concatenate the real and imaginary parts
+                        # concatenate the real and imaginary parts 
                         complex_pair = torch.cat((real_part, imag_part), dim=0)#.unsqueeze(dim=0)
 
                         # concatenate the channels
@@ -115,7 +115,7 @@ class TimeToFourier(object):
                     # concatenate the frequency bins
                     X_f_complex = torch.cat((X_f_complex, X_f_bin_complex.unsqueeze(dim=0)), dim=0)
         else:
-            # if you want real and imag part to be concatenated
+            # if you want real and imag part to be concatenated 
             # such that the output has shape [2, ch, time_steps]
             X_f_complex = X_f.unsqueeze(dim=-3)
             X_f_real = torch.real(X_f_complex)
@@ -123,12 +123,12 @@ class TimeToFourier(object):
 
             X_f_complex = torch.cat((X_f_real, X_f_imag), dim=-3)
 
-        # note: the Fourier transform of a signal with only real parts is symmetric
+        # note: the Fourier transform of a signal with only real parts is symmetric 
         #       thus only half of the transform can be returned to save memory
         start_idx = 0
         if self.return_half == True:
             start_idx = int(N/2)
-
+        
         return X_f_complex[..., start_idx:]
 
 class FourierToTime(object):
@@ -142,7 +142,7 @@ class FourierToTime(object):
     def __call__(self, sample) -> torch.Tensor:
         # define the output length of the Fourier transform
         N = self.factor * sample.shape[-1]
-
+        
         # reorder the input to have positive frequencies first and perform the inverse Fourier transform
         # note: the output of the inverse Fourier transform is complex (real + imaginary part)
         x_t = N * fft.ifft(fft.ifftshift(sample), n=N)
@@ -154,49 +154,37 @@ class CropResizing(object):
     """
         Randomly crop the sample and resize to the original length.
     """
-    def __init__(self, lower_bnd=0.75, upper_bnd=0.75, fixed_crop_len=None, start_idx=None, resize=False, fixed_resize_len=None, sequential=False, args=None) -> None:
+    def __init__(self, lower_bnd=0.75, upper_bnd=0.75, fixed_crop_len=None, start_idx=None, resize=False, fixed_resize_len=None) -> None:
         self.lower_bnd = lower_bnd
         self.upper_bnd = upper_bnd
         self.fixed_crop_len = fixed_crop_len
         self.start_idx = start_idx
         self.resize = resize
         self.fixed_resize_len = fixed_resize_len
-        self.sequential = sequential
-        self.args = args
 
     def __call__(self, sample) -> Any:
         sample_dims = sample.dim()
-
+        
         # define crop size
         if self.fixed_crop_len is not None:
             crop_len = self.fixed_crop_len
         else:
             # randomly sample the target length from a uniform distribution
-            crop_len = int(sample.shape[-1] * np.random.uniform(low=self.lower_bnd, high=self.upper_bnd))
-
+            crop_len = int(sample.shape[-1]*np.random.uniform(low=self.lower_bnd, high=self.upper_bnd))
+        
         # define cut-off point
-        if self.sequential:
-            total_length = sample.shape[-1]
-            num_segments = total_length // crop_len
-            self.epoch = self.args.current_epoch
-            current_segment = self.epoch % num_segments
-            start_idx = current_segment * crop_len
-            #print(start_idx)
-        elif self.start_idx is not None:
+        if self.start_idx is not None:
             start_idx = self.start_idx
-            #print(start_idx)
         else:
             # randomly sample the starting point for the cropping (cut-off)
             try:
-                start_idx = np.random.randint(low=0, high=sample.shape[-1] - crop_len)
-                #print(start_idx)
+                start_idx = np.random.randint(low=0, high=sample.shape[-1]-crop_len)
             except ValueError:
-                # if sample.shape[-1] - crop_len == 0, np.random.randint() throws an error
+                # if sample.shape[-1]-crop_len == 0, np.random.randint() throws an error
                 start_idx = 0
-                #print(start_idx)
 
         # crop and resize the signal
-        if self.resize:
+        if self.resize == True:
             # define length after resize operation
             if self.fixed_resize_len is not None:
                 resize_len = self.fixed_resize_len
@@ -207,25 +195,21 @@ class CropResizing(object):
             cropped_sample = torch.zeros_like(sample[..., :resize_len])
             if sample_dims == 2:
                 for ch in range(sample.shape[-2]):
-                    resized_signal = np.interp(np.linspace(0, crop_len, num=resize_len), np.arange(crop_len), sample[ch, start_idx:start_idx + crop_len])
+                    resized_signal = np.interp(np.linspace(0, crop_len, num=resize_len), np.arange(crop_len), sample[ch, start_idx:start_idx+crop_len])
                     cropped_sample[ch, :] = torch.from_numpy(resized_signal)
             elif sample_dims == 3:
                 for f_bin in range(sample.shape[-3]):
                     for ch in range(sample.shape[-2]):
-                        resized_signal = np.interp(np.linspace(0, crop_len, num=resize_len), np.arange(crop_len), sample[f_bin, ch, start_idx:start_idx + crop_len])
+                        resized_signal = np.interp(np.linspace(0, crop_len, num=resize_len), np.arange(crop_len), sample[f_bin, ch, start_idx:start_idx+crop_len])
                         cropped_sample[f_bin, ch, :] = torch.from_numpy(resized_signal)
             else:
                 sys.exit('Error. Sample dimension does not match.')
         else:
             # only crop the signal
             cropped_sample = torch.zeros_like(sample)
-            cropped_sample = sample[..., start_idx:start_idx + crop_len]
+            cropped_sample = sample[..., start_idx:start_idx+crop_len]
 
         return cropped_sample
-
-
-
-
 
 class Interpolation(object):
     """
@@ -239,7 +223,7 @@ class Interpolation(object):
         if np.random.uniform() < self.prob:
             sample_sub = sample[..., ::self.step]
             sample_interpolated = np.ones_like(sample)
-
+            
             sample_dims = sample.dim()
             if sample_dims == 2:
                 for ch in range(sample.shape[-2]):
@@ -274,7 +258,7 @@ class Masking(object):
 
             # determine the number of patches to be masked
             nb_patches = round(self.factor * sample.shape[-1] / self.patch_size)
-
+            
             indices_weights = np.random.random((mask.shape[0], nb_patches + 1))
 
             number_of_ones = mask.shape[-1] - self.patch_size * nb_patches
@@ -296,12 +280,12 @@ class Masking(object):
             return sample * mask
         else:
             return sample
-
+    
 class FTSurrogate(object):
     """
     FT surrogate augmentation of a single EEG channel, as proposed in [1]_.
-    Code (modified) from https://github.com/braindecode/braindecode/blob/master/braindecode/augmentation/functional.py
-
+    Code (modified) from https://github.com/braindecode/braindecode/blob/master/braindecode/augmentation/functional.py 
+    
 
     Parameters
     ----------
@@ -353,7 +337,7 @@ class FTSurrogate(object):
             random_phase,
             -torch.flip(random_phase, [-1]).to(device=device)
         ], dim=-1)
-
+    
     def _new_random_fft_phase_even(self, c, n, device='cpu', seed=None):
         rng = check_random_state(seed)
         random_phase = torch.from_numpy(
@@ -399,7 +383,7 @@ class FTSurrogate(object):
             return sample_transformed
         else:
             return sample
-
+    
 class FrequencyShift(object):
     """
     Adds a shift in the frequency domain to all channels.
@@ -482,7 +466,7 @@ class FrequencyShift(object):
             return sample_transformed
         else:
             return sample
-
+    
 class TimeFlip(object):
     """
         Flip the signal vertically.
@@ -495,7 +479,7 @@ class TimeFlip(object):
             return torch.flip(sample, dims=[-1])
         else:
             return sample
-
+    
 class SignFlip(object):
     """
         Flip the signal horizontally.
@@ -508,7 +492,7 @@ class SignFlip(object):
             return -1*sample
         else:
             return sample
-
+        
 class SpecAugment(object):
     """
         Randomly masking frequency or time bins of signal's short-time Fourier transform.
@@ -524,13 +508,13 @@ class SpecAugment(object):
         if sample_dim < 3:
             masked_sample = self._mask_spectrogram(sample)
         elif sample_dim == 3:
-            # perform masking separately for all entries in the first dimension
-            # and eventually concatenate the masked entries to retrieve the intial shape
+            # perform masking separately for all entries in the first dimension 
+            # and eventually concatenate the masked entries to retrieve the intial shape 
             masked_sample = torch.Tensor()
             for i in range(sample.shape[0]):
                 masked_sub_sample = self._mask_spectrogram(sample[i])
                 masked_sample = torch.cat((masked_sample, masked_sub_sample.unsqueeze(0)), dim=0)
-        else:
+        else: 
             print(f"Augmentation was not built for {sample_dim}-D input")
 
         return masked_sample

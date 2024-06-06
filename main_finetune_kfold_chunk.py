@@ -41,7 +41,7 @@ import models_vit
 from functools import partial
 
 from engine_finetune import train_one_epoch, evaluate
-from sklearn.model_selection import StratifiedKFold
+from sklearn.model_selection import StratifiedGroupKFold
 from sklearn.metrics import mean_absolute_error
 from sklearn.preprocessing import LabelEncoder
 
@@ -183,6 +183,8 @@ def get_args_parser():
                         help='labels path (default: None)')
     parser.add_argument('--label_map_path', default='', type=str,
                     help='label mappings path')
+    parser.add_argument('--subject_file_path', default='', type=str,
+                        help='path to subject id info file')
     parser.add_argument('--scale_percentage', default=100, type=int,
                         help='percentage of dataset to sample - for dataset scaling')
 
@@ -298,48 +300,25 @@ def calculate_baseline_metrics(labels, train_labels_mean):
         'Random guess std': std_random_guess,
     }
 
-def custom_collate_fn(batch, mean, std):
-    """
-    Custom collate function for dataloading that accepts varying input sizes.
-    Args:
-        batch (list of tuples): The batch data - list accepting varying sample sizes
-        mean (float): The training set mean
-        std (float): The training set std
-
-    Returns:
-        list: A list containing normalized batch data with samples, normalized labels, and label masks.
-    """
-    #print(f"Current fold mean and std: {float(mean):.2f}, {float(std):.2f}")
-
-    # Check if the first element is a list of tuples (for the validation case with chunks)
-    if isinstance(batch[0][0], (tuple, list)):
-        # Flatten the batch list of tuples
-        batch = [item for sublist in batch for item in sublist]
-
-    samples = [item[0] for item in batch]
-    labels = [item[1] for item in batch]
-    label_masks = [item[2] for item in batch]
-    labels_tensor = torch.stack(labels)
-
-    # Normalize labels
-    labels_normalized = (labels_tensor - mean) / (std + 1e-8)
-    return [samples, labels_normalized, torch.stack(label_masks)]
-
 def prepare_datasets(dataset, k_folds):
     if k_folds > 1:
-        skf = StratifiedKFold(n_splits=k_folds, shuffle=True, random_state=58)
+        sgkf = StratifiedGroupKFold(n_splits=args.k_folds, shuffle=True, random_state=13)
+        groups = dataset.get_subjects()  # Get the subject IDs for grouping
         labels = dataset.labels.ravel()
+        #Encode labels into categorical values for k-fold split
         label_encoder = LabelEncoder()
         labels_encoded = label_encoder.fit_transform(labels)
-        splits = list(skf.split(dataset, labels_encoded))
+        splits = list(sgkf.split(dataset, labels_encoded, groups=groups))
     else:
         # If no cross-validation, just split the dataset into train and validation in some ratio (e.g., 80-20)
         num_samples = len(dataset)
         train_size = int(0.8 * num_samples)
         indices = torch.randperm(num_samples).tolist()
         splits = [(indices[:train_size], indices[train_size:])]
+        groups = {}
 
-    return splits
+    return splits, groups
+
 
 def main(args):
     args.input_size = (args.input_channels, args.input_electrodes, args.time_steps)
@@ -361,8 +340,8 @@ def main(args):
     cudnn.benchmark = True
 
     # Create empty .csv file for saving
-    csv_filename = f"benchmark-AR_mae_PHYSIONETchkpt1_{args.input_electrodes}ELEC.csv"
-    csv_directory = "/vol/aimspace/users/soeb/lemon_baseline_runs"
+    csv_filename = f"benchmark-AR_mae_dataset-lemon_TUH100pct_BATCH{args.batch_size}_BLR{args.blr}_TIME{args.time_steps}_CHKPT2.csv"
+    csv_directory = "/vol/aimspace/users/soeb/lemon_kfold_Experiment2_NEW"
     csv_file_path = os.path.join(csv_directory, csv_filename)
     with open(csv_file_path, mode='w', newline='') as file:
         writer = csv.DictWriter(file, fieldnames=["fold", "MAE", "r2", "benchmark", "dataset"])
@@ -371,43 +350,14 @@ def main(args):
     dataset = SignalDataset(data_path=args.data_path, labels_path=args.labels_path,
                                   labels_mask_path=args.labels_mask_path,
                                   label_map_path=args.label_map_path,
-                                  downstream_task=args.downstream_task, train=True, args=args)
-    splits = prepare_datasets(dataset, args.k_folds)
+                                  subject_file_path=args.subject_file_path,
+                                  downstream_task=args.downstream_task, train=True, shape=(7042, 61, 3000), args=args)
+    splits, groups = prepare_datasets(dataset, args.k_folds)
 
     # train balanced
     class_weights = 2.0 / (2.0 * torch.Tensor([1.0, 1.0])) # total_nb_samples / (nb_classes * samples_per_class)
 
-    '''
-    if False:  # args.distributed:
-        num_tasks = misc.get_world_size()
-        global_rank = misc.get_rank()
-        sampler_train = torch.utils.data.DistributedSampler(
-            dataset_train, num_replicas=num_tasks, rank=global_rank, shuffle=True
-        )
-        print("Sampler_train = %s" % str(sampler_train))
-        if args.dist_eval:
-            if len(dataset_val) % num_tasks != 0:
-                print('Warning: Enabling distributed evaluation with an eval dataset not divisible by process number. '
-                      'This will slightly alter validation results as extra duplicate entries are added to achieve '
-                      'equal num of samples per-process.')
-            sampler_val = torch.utils.data.DistributedSampler(
-                dataset_val, num_replicas=num_tasks, rank=global_rank, shuffle=True)  # shuffle=True to reduce monitor bias
-        else:
-            c
-    else:
-        sampler_train = torch.utils.data.RandomSampler(dataset_train)
-        sampler_val = torch.utils.data.SequentialSampler(dataset_val)
-    '''
-
-    # tensorboard logging
-    if False: #global_rank == 0 and args.log_dir and not args.eval:
-        os.makedirs(args.log_dir, exist_ok=True)
-        log_writer = SummaryWriter(log_dir=args.log_dir)
-    elif False: #args.log_dir and args.eval and "checkpoint" not in args.resume.split("/")[-1]:
-        log_writer = SummaryWriter(log_dir=args.log_dir + "/eval")
-    else:
-        log_writer = None
-
+    log_writer = None
 ###################################  K-FOLD CROSS VALIDATION  ###############################################
     # Combining the initial datasets if k_folds > 1
     for fold, (train_idx, val_idx) in enumerate(splits):
@@ -422,21 +372,23 @@ def main(args):
                 wandb.finish()
             # Start a new wandb run for the current fold
             wandb.init(project=args.wandb_project, config=config,
-                    resume=False, id=None, group=f"Finetune_10Fold_PHYSIONETchkpt1_ELEC{args.input_electrodes}",
+                    resume=False, id=None, group=f"TUH100PCT_Finetune_10Fold_BATCH{args.batch_size}_BLR{args.blr}_TIME{args.time_steps}_CHKPT2",
                     name=f"Fold_{fold}", entity="begum-soenmez")
 
         print(f"Processing fold {fold}/{max(1, args.k_folds)}")
+        print(f"Train group= {np.unique(groups[train_idx])}")
+        print(f"Val group= {np.unique(groups[val_idx])}")
 
          # Subset the full dataset into train and validation datasets for the current fold
         dataset_train_fold = SignalDataset(data_path=args.data_path, labels_path=args.labels_path,
                                   labels_mask_path=args.labels_mask_path,
                                   label_map_path=args.label_map_path,
-                                  downstream_task=args.downstream_task, train=True, indices=train_idx, args=args)
+                                  downstream_task=args.downstream_task, train=True, indices=train_idx, shape=(7042, 61, 3000), args=args)
 
         dataset_val_fold = SignalDataset(data_path=args.data_path, labels_path=args.labels_path,
                                   labels_mask_path=args.labels_mask_path,
                                   label_map_path=args.label_map_path,
-                                  downstream_task=args.downstream_task, train=False, indices=val_idx, args=args)
+                                  downstream_task=args.downstream_task, train=False, indices=val_idx, shape=(7042, 61, 3000), args=args)
 
         print(f"Training set size: {len(dataset_train_fold)}")
         print(f"Validation set size: {len(dataset_val_fold)}")
@@ -450,8 +402,8 @@ def main(args):
         print(f"Fold {fold} Training labels mean: %.5f" % args.train_labels_mean)
         print(f"Fold {fold} Training labels std: %.5f" % args.train_labels_std)
 
-        # This is to dynamically change the mean and std for every fold
-        collate_fn_with_stats = partial(custom_collate_fn, mean=args.train_labels_mean, std=args.train_labels_std)
+        dataset_train_fold.labels = (train_labels - args.train_labels_mean) / (args.train_labels_std + 1e-8)
+        dataset_val_fold.labels = (val_labels - args.train_labels_mean) / (args.train_labels_std + 1e-8)
 
         num_tasks = misc.get_world_size()
         global_rank = misc.get_rank()
@@ -467,20 +419,17 @@ def main(args):
             batch_size=args.batch_size,
             num_workers=args.num_workers,
             pin_memory=args.pin_mem,
-            drop_last=False,
-            collate_fn=collate_fn_with_stats
+            drop_last=False
             )
 
         data_loader_val = DataLoader(
             dataset_val_fold,
             sampler=sampler_val,
             #shuffle=False,
-            #batch_size=args.batch_size,
-            batch_size = 1,
+            batch_size=args.batch_size,
             num_workers=args.num_workers,
             pin_memory=args.pin_mem,
-            drop_last=False,
-            collate_fn=collate_fn_with_stats
+            drop_last=False
             )
 
         #Random guessing stats
@@ -629,7 +578,6 @@ def main(args):
         best_eval_scores = {'count':0, 'nb_ckpts_max':5, 'eval_criterion':[best_stats[eval_criterion]]}
         for epoch in range(args.start_epoch, args.epochs):
             start_time = time.time()
-            args.current_epoch = epoch
 
             if True: #args.distributed:
                 data_loader_train.sampler.set_epoch(epoch)

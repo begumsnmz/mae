@@ -10,7 +10,6 @@
 # --------------------------------------------------------
 import os
 import argparse
-import glob
 
 import json
 from typing import Tuple
@@ -41,9 +40,8 @@ import models_vit
 from functools import partial
 
 from engine_finetune import train_one_epoch, evaluate
-from sklearn.model_selection import StratifiedKFold
+from sklearn.model_selection import KFold
 from sklearn.metrics import mean_absolute_error
-from sklearn.preprocessing import LabelEncoder
 
 
 def get_args_parser():
@@ -164,8 +162,6 @@ def get_args_parser():
     # * Finetuning params
     parser.add_argument('--finetune', default='',
                         help='finetune from checkpoint')
-    parser.add_argument('--baseline', action='store_true', default=False,
-                        help='Finetune from scratch, no checkpoint')
     parser.add_argument('--global_pool', action='store_true', default=False)
     parser.add_argument('--attention_pool', action='store_true', default=False)
     parser.add_argument('--cls_token', action='store_false', dest='global_pool',
@@ -181,11 +177,20 @@ def get_args_parser():
                         help='labels path (default: None)')
     parser.add_argument('--labels_mask_path', default='', type=str,
                         help='labels path (default: None)')
-    parser.add_argument('--label_map_path', default='', type=str,
-                    help='label mappings path')
+
+    parser.add_argument('--val_data_path', default='', type=str,
+                        help='validation dataset path (default: None)')
+    parser.add_argument('--val_labels_path', default='', type=str,
+                        help='validation labels path (default: None)')
+    parser.add_argument('--val_labels_mask_path', default='', type=str,
+                        help='validation labels path (default: None)')
     parser.add_argument('--scale_percentage', default=100, type=int,
                         help='percentage of dataset to sample - for dataset scaling')
 
+    parser.add_argument('--label_map_path', default='', type=str,
+                    help='label mappings path')
+    parser.add_argument('--val_label_map_path', default='', type=str,
+                    help='val label mappings path')
 
     ##Overfit Case params
     parser.add_argument('--overfit', type=bool, default=False,
@@ -248,32 +253,6 @@ def get_args_parser():
 
     return parser
 
-def find_checkpoint_for_fold(base_path, fold_number):
-    """
-    Function to search for the pretrain checkpoint matching the current fold
-    Args:
-        base_path: Folder where checkpoint folders are located
-        fold_number: current fold
-
-    Returns:
-        checkpoint_file: Path to pretrain checkpoint
-    """
-    # Pattern to match the fold directory based on fold number
-    fold_pattern = f"Fold{fold_number}_*"
-    full_path_pattern = os.path.join(base_path, fold_pattern)
-    fold_dirs = glob.glob(full_path_pattern)
-
-    if not fold_dirs:
-        raise FileNotFoundError(f"No directory found for fold {fold_number} in {base_path}")
-
-    # Assuming there's only one matching folder per fold, adjust if necessary
-    checkpoint_dir = fold_dirs[0]
-    checkpoint_file = glob.glob(os.path.join(checkpoint_dir, '*.pth'))
-
-    if not checkpoint_file:
-        raise FileNotFoundError(f"No checkpoint file found in {checkpoint_dir}")
-
-    return checkpoint_file[0]
 
 def calculate_baseline_metrics(labels, train_labels_mean):
     """
@@ -298,48 +277,6 @@ def calculate_baseline_metrics(labels, train_labels_mean):
         'Random guess std': std_random_guess,
     }
 
-def custom_collate_fn(batch, mean, std):
-    """
-    Custom collate function for dataloading that accepts varying input sizes.
-    Args:
-        batch (list of tuples): The batch data - list accepting varying sample sizes
-        mean (float): The training set mean
-        std (float): The training set std
-
-    Returns:
-        list: A list containing normalized batch data with samples, normalized labels, and label masks.
-    """
-    #print(f"Current fold mean and std: {float(mean):.2f}, {float(std):.2f}")
-
-    # Check if the first element is a list of tuples (for the validation case with chunks)
-    if isinstance(batch[0][0], (tuple, list)):
-        # Flatten the batch list of tuples
-        batch = [item for sublist in batch for item in sublist]
-
-    samples = [item[0] for item in batch]
-    labels = [item[1] for item in batch]
-    label_masks = [item[2] for item in batch]
-    labels_tensor = torch.stack(labels)
-
-    # Normalize labels
-    labels_normalized = (labels_tensor - mean) / (std + 1e-8)
-    return [samples, labels_normalized, torch.stack(label_masks)]
-
-def prepare_datasets(dataset, k_folds):
-    if k_folds > 1:
-        skf = StratifiedKFold(n_splits=k_folds, shuffle=True, random_state=58)
-        labels = dataset.labels.ravel()
-        label_encoder = LabelEncoder()
-        labels_encoded = label_encoder.fit_transform(labels)
-        splits = list(skf.split(dataset, labels_encoded))
-    else:
-        # If no cross-validation, just split the dataset into train and validation in some ratio (e.g., 80-20)
-        num_samples = len(dataset)
-        train_size = int(0.8 * num_samples)
-        indices = torch.randperm(num_samples).tolist()
-        splits = [(indices[:train_size], indices[train_size:])]
-
-    return splits
 
 def main(args):
     args.input_size = (args.input_channels, args.input_electrodes, args.time_steps)
@@ -361,21 +298,28 @@ def main(args):
     cudnn.benchmark = True
 
     # Create empty .csv file for saving
-    csv_filename = f"benchmark-AR_mae_PHYSIONETchkpt1_{args.input_electrodes}ELEC.csv"
-    csv_directory = "/vol/aimspace/users/soeb/lemon_baseline_runs"
+    csv_filename = f"benchmark-mae_BATCH{args.batch_size}_BLR{args.blr}_dataset-lemonNEW.csv"
+    csv_directory = "/vol/aimspace/users/soeb/debug_kfold_outputs"
     csv_file_path = os.path.join(csv_directory, csv_filename)
     with open(csv_file_path, mode='w', newline='') as file:
         writer = csv.DictWriter(file, fieldnames=["fold", "MAE", "r2", "benchmark", "dataset"])
         writer.writeheader()
 
-    dataset = SignalDataset(data_path=args.data_path, labels_path=args.labels_path,
+    dataset_train = SignalDataset(data_path=args.data_path, labels_path=args.labels_path,
                                   labels_mask_path=args.labels_mask_path,
                                   label_map_path=args.label_map_path,
                                   downstream_task=args.downstream_task, train=True, args=args)
-    splits = prepare_datasets(dataset, args.k_folds)
+
+    dataset_val = SignalDataset(data_path=args.val_data_path, labels_path=args.val_labels_path,
+                                labels_mask_path=args.val_labels_mask_path,
+                                label_map_path=args.val_label_map_path,
+                                downstream_task=args.downstream_task, train=False, args=args)
 
     # train balanced
     class_weights = 2.0 / (2.0 * torch.Tensor([1.0, 1.0])) # total_nb_samples / (nb_classes * samples_per_class)
+
+    print("Training set size: ", len(dataset_train))
+    print("Validation set size: ", len(dataset_val))
 
     '''
     if False:  # args.distributed:
@@ -408,13 +352,44 @@ def main(args):
     else:
         log_writer = None
 
+    '''
+    # wandb logging
+    if args.wandb == True:
+        config = vars(args)
+        if args.wandb_id:
+            wandb.init(project=args.wandb_project, id=args.wandb_id, config=config, entity="begum-soenmez")
+        else:
+            wandb.init(project=args.wandb_project, name=args.wandb_name, config=config, entity="begum-soenmez")
+    '''
+
+#############################################################################################################
+    def custom_collate_fn(batch, mean, std):
+
+        samples = [item[0] for item in batch]
+        labels = [item[1] for item in batch]
+        label_masks = [item[2] for item in batch]
+        labels_tensor = torch.stack(labels)
+
+        # Normalize labels
+        labels_normalized = (labels_tensor - mean) / (std + 1e-8)
+        return [samples, labels_normalized, torch.stack(label_masks)]
+
 ###################################  K-FOLD CROSS VALIDATION  ###############################################
     # Combining the initial datasets if k_folds > 1
+    if args.k_folds > 1:
+        # Combine datasets for k-fold cross-validation.
+        combined_dataset = ConcatDataset([dataset_train, dataset_val])
+        kf = KFold(n_splits=args.k_folds, shuffle=True, random_state=58)
+        splits = kf.split(np.arange(len(combined_dataset)))
+    else:
+        # Create a "dummy" split to mimick to reuse the original split
+        splits = [(
+            np.arange(len(dataset_train)),
+            np.arange(len(dataset_val)) + len(dataset_train)
+        )]
+        combined_dataset = ConcatDataset([dataset_train, dataset_val])  # Still combine for uniform indexing
+
     for fold, (train_idx, val_idx) in enumerate(splits):
-        if not args.baseline:
-            if args.finetune == '': #If a specific finetune path is not provided, locate it with the function
-                args.finetune = find_checkpoint_for_fold("/vol/aimspace/users/soeb/EXP1_output_pretrain_lemon_kfold", fold)
-                print(f"Using generated checkpoint for fold {fold}: {args.finetune}")
 
         if args.wandb:
             config = vars(args)
@@ -422,33 +397,22 @@ def main(args):
                 wandb.finish()
             # Start a new wandb run for the current fold
             wandb.init(project=args.wandb_project, config=config,
-                    resume=False, id=None, group=f"Finetune_10Fold_PHYSIONETchkpt1_ELEC{args.input_electrodes}",
+                    resume=False, id=None, group=f"Finetune_10Fold_BATCH{args.batch_size}_BLR{args.blr}",
                     name=f"Fold_{fold}", entity="begum-soenmez")
 
         print(f"Processing fold {fold}/{max(1, args.k_folds)}")
 
-         # Subset the full dataset into train and validation datasets for the current fold
-        dataset_train_fold = SignalDataset(data_path=args.data_path, labels_path=args.labels_path,
-                                  labels_mask_path=args.labels_mask_path,
-                                  label_map_path=args.label_map_path,
-                                  downstream_task=args.downstream_task, train=True, indices=train_idx, args=args)
-
-        dataset_val_fold = SignalDataset(data_path=args.data_path, labels_path=args.labels_path,
-                                  labels_mask_path=args.labels_mask_path,
-                                  label_map_path=args.label_map_path,
-                                  downstream_task=args.downstream_task, train=False, indices=val_idx, args=args)
-
-        print(f"Training set size: {len(dataset_train_fold)}")
-        print(f"Validation set size: {len(dataset_val_fold)}")
+        dataset_train_fold = Subset(combined_dataset, train_idx)
+        dataset_val_fold = Subset(combined_dataset, val_idx)
 
         # Get train label statistics for normalization
-        train_labels = dataset_train_fold.labels
-        val_labels= dataset_val_fold.labels
+        train_labels = torch.stack([combined_dataset[i][1] for i in train_idx])
+        val_labels = torch.stack([combined_dataset[i][1] for i in val_idx])
         args.train_labels_mean = train_labels.mean(dim=0)
         args.train_labels_std = train_labels.std(dim=0)
 
-        print(f"Fold {fold} Training labels mean: %.5f" % args.train_labels_mean)
-        print(f"Fold {fold} Training labels std: %.5f" % args.train_labels_std)
+        print("Training labels mean: %.5f" % args.train_labels_mean)
+        print("Training labels std: %.5f" % args.train_labels_std)
 
         # This is to dynamically change the mean and std for every fold
         collate_fn_with_stats = partial(custom_collate_fn, mean=args.train_labels_mean, std=args.train_labels_std)
@@ -466,7 +430,7 @@ def main(args):
              #shuffle=True,
             batch_size=args.batch_size,
             num_workers=args.num_workers,
-            pin_memory=args.pin_mem,
+            pin_memory=True,
             drop_last=False,
             collate_fn=collate_fn_with_stats
             )
@@ -475,10 +439,9 @@ def main(args):
             dataset_val_fold,
             sampler=sampler_val,
             #shuffle=False,
-            #batch_size=args.batch_size,
-            batch_size = 1,
+            batch_size=args.batch_size,
             num_workers=args.num_workers,
-            pin_memory=args.pin_mem,
+            pin_memory=True,
             drop_last=False,
             collate_fn=collate_fn_with_stats
             )
@@ -603,11 +566,11 @@ def main(args):
 
                 test_stats, test_history = evaluate(data_loader_val, model, device, epoch, log_writer=log_writer, args=args)
                 if args.downstream_task == 'classification':
-                    print(f"Accuracy / F1 / AUROC / AUPRC of the network on the {len(dataset_val_fold)} test images: {test_stats['acc']:.2f}% /"
+                    print(f"Accuracy / F1 / AUROC / AUPRC of the network on the {len(dataset_val)} test images: {test_stats['acc']:.2f}% /"
                         f"{test_stats['f1']:.2f}% / {test_stats['auroc']:.2f}% / {test_stats['auprc']:.2f}%")
                 elif args.downstream_task == 'regression':
                     print(f"Root Mean Squared Error (RMSE) / Mean Absolute Error (MAE) / MAE in Years / Pearson Correlation Coefficient (PCC) / R Squared (R2)",
-                        f"of the network on the {len(dataset_val_fold)} test images: {test_stats['rmse']:.4f} / {test_stats['mae']:.4f} / {test_stats['mae_years']:.4f} /",
+                        f"of the network on the {len(dataset_val)} test images: {test_stats['rmse']:.4f} / {test_stats['mae']:.4f} / {test_stats['mae_years']:.4f} /",
                         f"{test_stats['pcc']:.4f} / {test_stats['r2']:.4f}")
 
                 if args.wandb:
@@ -629,7 +592,6 @@ def main(args):
         best_eval_scores = {'count':0, 'nb_ckpts_max':5, 'eval_criterion':[best_stats[eval_criterion]]}
         for epoch in range(args.start_epoch, args.epochs):
             start_time = time.time()
-            args.current_epoch = epoch
 
             if True: #args.distributed:
                 data_loader_train.sampler.set_epoch(epoch)
@@ -681,7 +643,7 @@ def main(args):
                 best_stats['auroc'] = max(best_stats['auroc'], test_stats['auroc'])
                 best_stats['auprc'] = max(best_stats['auprc'], test_stats['auprc'])
 
-                print(f"Accuracy / F1 / AUROC / AUPRC of the network on the {len(dataset_val_fold)} test images: {test_stats['acc']:.1f}% /",
+                print(f"Accuracy / F1 / AUROC / AUPRC of the network on the {len(dataset_val)} test images: {test_stats['acc']:.1f}% /",
                     f"{test_stats['f1']:.1f}% / {test_stats['auroc']:.1f}% / {test_stats['auprc']:.1f}%")
                 print(f'Max Accuracy / F1 / AUROC / AUPRC: {best_stats["acc"]:.2f}% / {best_stats["f1"]:.2f}% /',
                     f'{best_stats["auroc"]:.2f}% / {best_stats["auprc"]:.2f}%\n')
@@ -695,7 +657,7 @@ def main(args):
                 best_stats['r2'] = max(best_stats['r2'], test_stats['r2'])
 
                 print(f"Root Mean Squared Error (RMSE) / Mean Absolute Error (MAE) / MAE in Years / Pearson Correlation Coefficient (PCC) / R Squared (R2)",
-                    f"of the network on the {len(dataset_val_fold)} test images: {test_stats['rmse']:.4f} / {test_stats['mae']:.4f} / {test_stats['mae_years']:.4f} /",
+                    f"of the network on the {len(dataset_val)} test images: {test_stats['rmse']:.4f} / {test_stats['mae']:.4f} / {test_stats['mae_years']:.4f} /",
                     f"{test_stats['pcc']:.4f} / {test_stats['r2']:.4f}")
                 print(f'Min Root Mean Squared Error (RMSE) / Min Mean Absolute Error (MAE) / Min MAE in Years / Max Pearson Correlation Coefficient (PCC) /',
                     f'Max R Squared (R2): {best_stats["rmse"]:.4f} / {best_stats["mae"]:.4f} / {best_stats["mae_years"]:.4f} / {best_stats["pcc"]:.4f} / {best_stats["r2"]:.4f}\n')
