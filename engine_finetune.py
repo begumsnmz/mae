@@ -214,6 +214,9 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
 
 @torch.no_grad()
 def evaluate(data_loader, model, device, epoch, log_writer=None, args=None):
+    if isinstance(model, torch.nn.parallel.DistributedDataParallel):
+        model = model.module
+
     # switch to evaluation mode
     model.eval()
 

@@ -38,6 +38,7 @@ from engine_pretrain import train_one_epoch, evaluate_online, evaluate
 from util.dataset import SignalDataset
 from torch.profiler import profile, ProfilerActivity, tensorboard_trace_handler
 from memory_profiler import profile
+from functools import partial
 
 
 def get_args_parser():
@@ -73,8 +74,8 @@ def get_args_parser():
                         help='input length')
     parser.add_argument('--input_size', default=(5, 65, 37000), type=Tuple,
                         help='images input size')
-    parser.add_argument('--electrode_idx', type=int, nargs='*', default=None,
-                        help='Electrode indices to slice')
+    parser.add_argument('--electrode_idx', type=str, default=None,
+                        help='Comma-separated electrode indices to slice')
 
     parser.add_argument('--patch_height', type=int, default=65, metavar='N',
                         help='patch height')
@@ -198,6 +199,7 @@ def get_args_parser():
 
     return parser
 
+
 def calculate_baseline_metrics(labels, train_labels_mean):
     """
     Calculate baseline metrics for random guesses based on the mean of training labels.
@@ -226,8 +228,8 @@ def main(args):
     args.input_size = (args.input_channels, args.input_electrodes, args.time_steps)
     args.patch_size = (args.patch_height, args.patch_width)
 
-    # misc.init_distributed_mode(args)
-    args.distributed = False
+    misc.init_distributed_mode(args)
+    #args.distributed = False
 
     print('job dir: {}'.format(os.path.dirname(os.path.realpath(__file__))))
     print("{}".format(args).replace(', ', ',\n'))
@@ -241,6 +243,8 @@ def main(args):
     np.random.seed(seed)
 
     cudnn.benchmark = True
+
+    args.electrode_idx = [int(idx) for idx in args.electrode_idx.split(',')] if args.electrode_idx else None
 
     # load data
     dataset_train = SignalDataset(data_path=args.data_path, train=True, shape=(266871,19,10000), args=args)
@@ -377,7 +381,7 @@ def main(args):
     print("effective batch size: %d" % eff_batch_size)
 
     if args.distributed:
-        model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu], find_unused_parameters=True)
+        model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu], find_unused_parameters=False)
         model_without_ddp = model.module
 
     # following timm: set wd as 0 for bias and norm layers
@@ -489,7 +493,7 @@ if __name__ == '__main__':
     if args.output_dir:
         Path(args.output_dir).mkdir(parents=True, exist_ok=True)
     else:
-        directory_name = f"/vol/aimspace/users/soeb/EXP2_output_pretrain_tuh/PCT{args.scale_percentage}_Pretrain_BATCH{args.batch_size}_BLR{args.blr}_TIME{args.time_steps}"
+        directory_name = f"/vol/aimspace/users/soeb/OPTIMIZATION_PRETRAIN/TUH/PCT{args.scale_percentage}_Pretrain_BATCH{args.batch_size}_BLR{args.blr}_TIME{args.time_steps}_PATCH{args.patch_width}"
         Path(directory_name).mkdir(parents=True, exist_ok=True)
 
         args.output_dir = directory_name

@@ -185,6 +185,8 @@ def get_args_parser():
                     help='label mappings path')
     parser.add_argument('--scale_percentage', default=100, type=int,
                         help='percentage of dataset to sample - for dataset scaling')
+    parser.add_argument('--num_chunks', default=100, type=int,
+                        help='Number of chunks to take from val chunking')
 
 
     ##Overfit Case params
@@ -345,8 +347,8 @@ def main(args):
     args.input_size = (args.input_channels, args.input_electrodes, args.time_steps)
     args.patch_size = (args.patch_height, args.patch_width)
 
-    # misc.init_distributed_mode(args)
-    args.distributed = False
+    misc.init_distributed_mode(args)
+    #args.distributed = False
 
     print('job dir: {}'.format(os.path.dirname(os.path.realpath(__file__))))
     print("{}".format(args).replace(', ', ',\n'))
@@ -361,7 +363,7 @@ def main(args):
     cudnn.benchmark = True
 
     # Create empty .csv file for saving
-    csv_filename = f"benchmark-AR_mae_PHYSIONETchkpt1_{args.input_electrodes}ELEC.csv"
+    csv_filename = f"benchmark-AR_mae_{os.path.basename(args.finetune)}.csv"
     csv_directory = "/vol/aimspace/users/soeb/lemon_baseline_runs"
     csv_file_path = os.path.join(csv_directory, csv_filename)
     with open(csv_file_path, mode='w', newline='') as file:
@@ -411,6 +413,7 @@ def main(args):
 ###################################  K-FOLD CROSS VALIDATION  ###############################################
     # Combining the initial datasets if k_folds > 1
     for fold, (train_idx, val_idx) in enumerate(splits):
+
         if not args.baseline:
             if args.finetune == '': #If a specific finetune path is not provided, locate it with the function
                 args.finetune = find_checkpoint_for_fold("/vol/aimspace/users/soeb/EXP1_output_pretrain_lemon_kfold", fold)
@@ -422,10 +425,11 @@ def main(args):
                 wandb.finish()
             # Start a new wandb run for the current fold
             wandb.init(project=args.wandb_project, config=config,
-                    resume=False, id=None, group=f"Finetune_10Fold_PHYSIONETchkpt1_ELEC{args.input_electrodes}",
+                    resume=False, id=None, group=f"Finetune_10Fold_{os.path.basename(args.finetune)}",
                     name=f"Fold_{fold}", entity="begum-soenmez")
 
         print(f"Processing fold {fold}/{max(1, args.k_folds)}")
+        print(val_idx)
 
          # Subset the full dataset into train and validation datasets for the current fold
         dataset_train_fold = SignalDataset(data_path=args.data_path, labels_path=args.labels_path,
@@ -436,7 +440,7 @@ def main(args):
         dataset_val_fold = SignalDataset(data_path=args.data_path, labels_path=args.labels_path,
                                   labels_mask_path=args.labels_mask_path,
                                   label_map_path=args.label_map_path,
-                                  downstream_task=args.downstream_task, train=False, indices=val_idx, args=args)
+                                  downstream_task=args.downstream_task, train=False, indices=val_idx, num_chunks=args.num_chunks, args=args)
 
         print(f"Training set size: {len(dataset_train_fold)}")
         print(f"Validation set size: {len(dataset_val_fold)}")

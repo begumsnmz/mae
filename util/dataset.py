@@ -132,7 +132,7 @@ class SignalDataset(Dataset):
         data = (data - data.mean(-1, keepdims=True)) / (data.std(-1, keepdims=True) + 1e-8)
         data = torch.clamp(data, min=-20, max=20)
 
-        if self.train == False: #VALIDATION
+        if self.train == False and self.num_chunks is not None: #VALIDATION
             #transform = transforms.Compose([augmentations.CropResizing(fixed_crop_len=self.args.input_size[-1], resize=False, sequential=True, args=self.args),])
             #Chunk the data
             chunks = torch.split(data, self.args.input_size[-1], dim=-1)
@@ -141,6 +141,13 @@ class SignalDataset(Dataset):
             if self.num_chunks: #If the argument is provided, take only the first n chunks
                 chunks = chunks[:self.num_chunks]
             return [(chunk, label, label_mask) for chunk in chunks]
+
+        elif self.train == False and self.num_chunks is None:
+            transform = transforms.Compose([
+                augmentations.CropResizing(fixed_crop_len=self.args.input_size[-1], resize=False, start_idx=0),
+            ])
+            data = transform(data)
+            return data, label, label_mask
 
         else:  # TRAINING
             transform = transforms.Compose([

@@ -192,6 +192,13 @@ def get_args_parser():
                         help='val label mappings path')
     parser.add_argument('--subject_file_path', default='', type=str,
                         help='path to subject id info file')
+    parser.add_argument('--num_chunks', default=100, type=int,
+                        help='Number of chunks to take from val chunking')
+
+    parser.add_argument('--lemon_fold', action='store_true',
+                        help='Lemon k-fold pretraining')
+    parser.add_argument('--fold_idx', default=None, type=int,
+                        help='Lemon k-fold pretraining - fold index')
 
 
     ##Overfit Case params
@@ -238,7 +245,7 @@ def get_args_parser():
                         help='start epoch')
     parser.add_argument('--eval', action='store_true',
                         help='Perform evaluation only')
-    parser.add_argument('--dist_eval', action='store_true', default=False,
+    parser.add_argument('--dist_eval', action='store_true', default=True,
                         help='Enabling distributed evaluation (recommended during training for faster monitor')
     parser.add_argument('--num_workers', default=10, type=int)
     parser.add_argument('--pin_mem', action='store_true', default=True,
@@ -289,6 +296,13 @@ def custom_collate_fn(batch, mean, std):
     Returns:
         list: A list containing normalized batch data with samples, normalized labels, and label masks.
     """
+    #print(f"Current fold mean and std: {float(mean):.2f}, {float(std):.2f}")
+
+    # Check if the first element is a list of tuples (for the validation case with chunks)
+    if isinstance(batch[0][0], (tuple, list)):
+        # Flatten the batch list of tuples
+        batch = [item for sublist in batch for item in sublist]
+
     samples = [item[0] for item in batch]
     labels = [item[1] for item in batch]
     label_masks = [item[2] for item in batch]
@@ -302,8 +316,8 @@ def main(args):
     args.input_size = (args.input_channels, args.input_electrodes, args.time_steps)
     args.patch_size = (args.patch_height, args.patch_width)
 
-    # misc.init_distributed_mode(args)
-    args.distributed = False
+    misc.init_distributed_mode(args)
+    #args.distributed = False
 
     print('job dir: {}'.format(os.path.dirname(os.path.realpath(__file__))))
     print("{}".format(args).replace(', ', ',\n'))
@@ -320,22 +334,27 @@ def main(args):
     args.electrode_idx = [int(idx) for idx in args.electrode_idx.split(',')] if args.electrode_idx else None
 
     # Load the splits.pkl file
-    splits_file = '/vol/aimspace/users/soeb/splits.pkl'
+    splits_file = '/vol/aimspace/users/soeb/kf_splits_lemon.pkl'
     with open(splits_file, 'rb') as f:
         splits = pickle.load(f)
 
-    # Choose one fold to fix
-    fold_index = 0
-    train_idx, val_idx = splits[fold_index]
+    if args.lemon_fold:
+        # Choose one fold to fix
+        train_idx, val_idx = splits[args.fold_idx]
+        print(val_idx)
+    else:
+        # Choose one fold to fix
+        fold_index = 0
+        train_idx, val_idx = splits[fold_index]
 
     dataset_train = SignalDataset(data_path=args.data_path, labels_path=args.labels_path,
                                   labels_mask_path=args.labels_mask_path,
                                   label_map_path=args.label_map_path,
-                                  downstream_task=args.downstream_task, train=True, indices=train_idx, shape=(7042, 61, 3000), args=args)
+                                  downstream_task=args.downstream_task, train=True, indices=train_idx, args=args)
     dataset_val = SignalDataset(data_path=args.data_path, labels_path=args.labels_path,
                                   labels_mask_path=args.labels_mask_path,
                                   label_map_path=args.label_map_path,
-                                  downstream_task=args.downstream_task, train=False, indices=val_idx, shape=(7042, 61, 3000), args=args)
+                                  downstream_task=args.downstream_task, train=False, indices=val_idx, num_chunks=args.num_chunks, args=args)
 
     # train balanced
     class_weights = 2.0 / (2.0 * torch.Tensor([1.0, 1.0])) # total_nb_samples / (nb_classes * samples_per_class)
@@ -410,7 +429,7 @@ def main(args):
         dataset_val,
         sampler=sampler_val,
         # shuffle=False,
-        batch_size=args.batch_size,
+        batch_size=1,
         num_workers=args.num_workers,
         pin_memory=args.pin_mem,
         drop_last=False,
@@ -544,6 +563,7 @@ def main(args):
     # Define callbacks
     early_stop = EarlyStop(patience=args.patience, max_delta=args.max_delta)
 
+    print(val_idx)
     print(f"Start training for {args.epochs} epochs")
 
     if args.downstream_task == 'classification':

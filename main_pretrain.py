@@ -37,6 +37,7 @@ from engine_pretrain import train_one_epoch, evaluate_online, evaluate
 
 from util.dataset import SignalDataset
 from functools import partial
+import pickle
 
 
 def get_args_parser():
@@ -160,6 +161,11 @@ def get_args_parser():
                         help='validation labels path for the online evaluation')
     parser.add_argument('--val_labels_mask_path_online', default='', type=str,
                         help='labels path (default: None)')
+    parser.add_argument('--lemon_fold', action='store_true',
+                        help='Lemon k-fold pretraining')
+    parser.add_argument('--fold_idx', default=None, type=int,
+                        help='Lemon k-fold pretraining - fold index')
+
 
     parser.add_argument('--output_dir', default='',
                         help='path where to save, empty for no saving')
@@ -194,6 +200,7 @@ def get_args_parser():
                         help='url used to set up distributed training')
 
     return parser
+
 
 def calculate_baseline_metrics(labels, train_labels_mean):
     """
@@ -247,8 +254,8 @@ def main(args):
     args.input_size = (args.input_channels, args.input_electrodes, args.time_steps)
     args.patch_size = (args.patch_height, args.patch_width)
 
-    # misc.init_distributed_mode(args)
-    args.distributed = False
+    misc.init_distributed_mode(args)
+    #args.distributed = False
 
     print('job dir: {}'.format(os.path.dirname(os.path.realpath(__file__))))
     print("{}".format(args).replace(', ', ',\n'))
@@ -266,8 +273,22 @@ def main(args):
     args.electrode_idx = [int(idx) for idx in args.electrode_idx.split(',')] if args.electrode_idx else None
 
     # load data
-    dataset_train = SignalDataset(data_path=args.data_path, train=True, args=args)
-    dataset_val = SignalDataset(data_path=args.val_data_path, train=False, num_chunks=100, args=args)
+    if args.lemon_fold:
+        #Load the folds
+        splits_file = '/vol/aimspace/users/soeb/kf_splits_lemon.pkl'
+        with open(splits_file, 'rb') as f:
+            splits = pickle.load(f)
+
+        # Choose one fold to fix
+        train_idx, val_idx = splits[args.fold_idx]
+        print(val_idx)
+
+        dataset_train = SignalDataset(data_path=args.data_path, train=True, indices=train_idx, args=args)
+        dataset_val = SignalDataset(data_path=args.data_path, train=False, indices=val_idx, num_chunks=100, args=args)
+
+    else:
+        dataset_train = SignalDataset(data_path=args.data_path, train=True, args=args)
+        dataset_val = SignalDataset(data_path=args.val_data_path, train=False, num_chunks=100, args=args)
 
     print("Training set size: ", len(dataset_train))
     print("Validation set size: ", len(dataset_val))
@@ -296,8 +317,12 @@ def main(args):
         if args.wandb_id:
             wandb.init(project=args.wandb_project, name= args.wandb_name, id=args.wandb_id, config=config, entity="begum-soenmez")
         else:
-            #wandb.init(project=args.wandb_project, name=args.wandb_name, config=config, entity="begum-soenmez")
-            wandb.init(project=args.wandb_project, config=config, entity="begum-soenmez")
+            if args.lemon_fold:
+                args.wandb_name = f"Pretrain_Fold{args.fold_idx}"
+                wandb.init(project=args.wandb_project, name=args.wandb_name, config=config, entity="begum-soenmez")
+            else:
+                #wandb.init(project=args.wandb_project, name=args.wandb_name, config=config, entity="begum-soenmez")
+                wandb.init(project=args.wandb_project, config=config, entity="begum-soenmez")
 
 
     # online evaluation
@@ -366,7 +391,7 @@ def main(args):
         data_loader_online_val = torch.utils.data.DataLoader(
             dataset_online_val,
             shuffle=False,
-            batch_size=16,
+            batch_size=32,
             num_workers=args.num_workers,
             pin_memory=args.pin_mem,
             drop_last=False,
@@ -403,6 +428,8 @@ def main(args):
     print("effective batch size: %d" % eff_batch_size)
 
     if args.distributed:
+        print("Distributed Training...")
+        print(args.gpu)
         model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu], find_unused_parameters=True)
         model_without_ddp = model.module
 
@@ -507,8 +534,12 @@ if __name__ == '__main__':
     if args.output_dir:
         Path(args.output_dir).mkdir(parents=True, exist_ok=True)
     else:
-        directory_name = f"/vol/aimspace/users/soeb/EXP3_SEED_Pretrain/Pretrain_CHAN{args.input_electrodes}_BATCH{args.batch_size}_BLR{args.blr}_TIME{args.time_steps}"
-        Path(directory_name).mkdir(parents=True, exist_ok=True)
+        if args.lemon_fold:
+            directory_name = f"/vol/aimspace/users/soeb/LEMON_KFOLD_Pretrain/FOLD{args.fold_idx}_Pretrain_CHAN{args.input_electrodes}_BATCH{args.batch_size}_BLR{args.blr}_TIME{args.time_steps}_PATCH{args.patch_width}"
+            Path(directory_name).mkdir(parents=True, exist_ok=True)
+        else:
+            directory_name = f"/vol/aimspace/users/soeb/OPTIMIZATION"
+            Path(directory_name).mkdir(parents=True, exist_ok=True)
 
         args.output_dir = directory_name
     main(args)

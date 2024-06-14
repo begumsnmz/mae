@@ -231,8 +231,10 @@ def init_distributed_mode(args):
         args.world_size = int(os.environ['WORLD_SIZE'])
         args.gpu = int(os.environ['LOCAL_RANK'])
     elif 'SLURM_PROCID' in os.environ:
+        print("Using SLURM initialization...")
         args.rank = int(os.environ['SLURM_PROCID'])
         args.gpu = args.rank % torch.cuda.device_count()
+        print(args.gpu)
     else:
         print('Not using distributed mode')
         setup_for_distributed(is_master=True)  # hack
@@ -348,8 +350,8 @@ def save_best_model(args, epoch, model, model_without_ddp, optimizer, loss_scale
             save_on_master(to_save, checkpoint_path)
     else:
         client_state = {'epoch': epoch}
-        model.save_checkpoint(save_dir=args.output_dir, 
-                              tag=f"checkpoint-{epoch_name}-{evaluation_criterion}-{test_stats[evaluation_criterion]:.4f}.pth", 
+        model.save_checkpoint(save_dir=args.output_dir,
+                              tag=f"checkpoint-{epoch_name}-{evaluation_criterion}-{test_stats[evaluation_criterion]:.4f}.pth",
                               client_state=client_state)
 
 def load_model(args, model_without_ddp, optimizer, loss_scaler):
